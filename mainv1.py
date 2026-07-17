@@ -91,7 +91,7 @@ app = FastAPI(
     title="Wenyfour FastAPI App",
 
     # Short explanation of the API
-    description="Simple CRUD API built with FastAPI and PostgreSQL",
+    description="Traditional SQL Simple CRUD API built with FastAPI and PostgreSQL",
 
     # Application version
     version="1.0.0",
