@@ -19,9 +19,11 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import time
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from . import models, schemas
 from .database import engine, get_db
 from .schemas import PostCreate, PostBase, PostResponse
+from . import schemas
 models.Base.metadata.create_all(bind=engine)
 
 # ==========================================================
@@ -440,7 +442,32 @@ def delete_post(
 
     return Response(
         status_code=status.HTTP_204_NO_CONTENT
-    )@app.get("/sqlalchemy")
-def test_posts(db: Session = Depends(get_db)):
-    
-    return {"status": "success"}  
+    )
+
+@app.post(
+    "/users",
+    status_code=status.HTTP_201_CREATED,
+    response_model=schemas.UserOut
+)
+def create_user(
+    user: schemas.UserCreate,
+    db: Session = Depends(get_db)
+):
+    new_user = models.User(**user.model_dump())
+
+    db.add(new_user)
+
+    try:
+        db.commit()
+        db.refresh(new_user)
+
+    except IntegrityError as e:
+         db.rollback()
+         raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email or phone number already exists."
+            )
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user

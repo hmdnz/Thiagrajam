@@ -1,6 +1,7 @@
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr, model_validator, ConfigDict
 from datetime import datetime
+import re
 
 
 # ==========================================================
@@ -26,20 +27,60 @@ class PostBase(BaseModel):
 class PostCreate(PostBase):
     pass    
 
-class PostResponse(BaseModel):
+class PostResponse(PostBase):
 
     id: int
-
-    title: str
-
-    content: str
-
-    published: bool
-
-    rating: Optional[int]
 
     created_at: datetime
 
 
     class Config:
         orm_mode = True
+
+
+class UserCreate(BaseModel):
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = None
+    password: str
+
+    @model_validator(mode="after")
+    def validate_contact(self):
+
+        email = self.email
+        phone = self.phone_number
+
+        # Remove whitespace
+        if isinstance(phone, str):
+            phone = phone.strip()
+            self.phone_number = phone
+
+        # Either email or phone must be provided
+        if not email and not phone:
+            raise ValueError(
+                "A valid email or phone number must be provided."
+            )
+
+        # Validate phone if provided
+        if phone:
+
+            # Max 15 characters including optional +
+            if len(phone) > 15:
+                raise ValueError(
+                    "Phone number must not exceed 15 characters including the '+' sign."
+                )
+
+            # Optional + followed by 1-14 digits only
+            if not re.fullmatch(r"\+?\d{1,14}", phone):
+                raise ValueError(
+                    "Phone number must contain only digits and may start with a single '+'."
+                )
+
+        return self
+
+class UserOut(BaseModel):
+    id: int
+    email: EmailStr | None = None
+    phone_number: str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
