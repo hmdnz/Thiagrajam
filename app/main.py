@@ -1,7 +1,6 @@
 # ==========================================================
 # IMPORTS
 # ==========================================================
-
 # Optional allows a field to be optional (can be None)
 # from typing import Optional
 from pydantic import BaseModel, Field
@@ -17,7 +16,8 @@ from fastapi import HTTPException, Response, status,Depends
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from . import models
+from . import  models, auth
+
 import time
 # from sqlalchemy.orm import Session
 # from sqlalchemy.exc import IntegrityError
@@ -28,9 +28,8 @@ import time
 from .routers import post, users
 
 from .database import engine, get_db
+
 models.Base.metadata.create_all(bind=engine)
-
-
 
 # ==========================================================
 # CREATE FASTAPI APPLICATION
@@ -45,6 +44,8 @@ app = FastAPI(
 
 app.include_router(post.router)
 app.include_router(users.router)
+app.include_router(auth.router) 
+
 
 while True:
 

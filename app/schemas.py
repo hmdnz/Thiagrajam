@@ -34,8 +34,7 @@ class PostResponse(PostBase):
     created_at: datetime
 
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserCreate(BaseModel):
@@ -84,3 +83,58 @@ class UserOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class UserLogin(BaseModel):
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = None
+    password: str
+
+    @model_validator(mode="after")
+    def validate_contact(self):
+
+        email = self.email
+        phone = self.phone_number
+
+        # Remove whitespace
+        if isinstance(phone, str):
+            phone = phone.strip()
+            self.phone_number = phone
+
+        # Either email or phone must be provided
+        if not email and not phone:
+            raise ValueError(
+                "A valid email or phone number must be provided."
+            )
+
+        # Validate phone if provided
+        if phone:
+
+            # Max 15 characters including optional +
+            if len(phone) > 15:
+                raise ValueError(
+                    "Phone number must not exceed 15 characters including the '+' sign."
+                )
+
+            # Optional + followed by 1-14 digits only
+            if not re.fullmatch(r"\+?\d{1,14}", phone):
+                raise ValueError(
+                    "Phone number must contain only digits and may start with a single '+'."
+                )
+
+        return self
+
+class ForgotPassword(BaseModel):
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_contact(self):
+        if not self.email and not self.phone_number:
+            raise ValueError("A valid email or phone number must be provided.")
+        return self
+
+
+class ResetPassword(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8)
+    

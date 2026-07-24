@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 
-router = APIRouter()
-
+router = APIRouter(
+    tags=["Posts"]
+)
 
 # ==========================================================
 # CREATE POST
