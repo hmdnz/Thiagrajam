@@ -25,7 +25,7 @@ import time
 # from .schemas import PostCreate, PostBase, PostResponse
 # from . import schemas
 
-from .routers import post, users
+from .routers import post, users, profile
 
 from .database import engine, get_db
 
@@ -42,10 +42,10 @@ app = FastAPI(
     version="1.0.0",
 )
 
-app.include_router(post.router)
+# app.include_router(post.router)
 app.include_router(users.router)
 app.include_router(auth.router) 
-
+app.include_router(profile.router)
 
 while True:
 

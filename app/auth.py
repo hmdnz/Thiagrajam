@@ -1,10 +1,15 @@
+
+
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from . import models, schemas, utils, oauth2
 from .database import get_db
 
-router = APIRouter()
+router = APIRouter(
+    tags=["Login"]
+)  
 
 
 @router.post("/login")
