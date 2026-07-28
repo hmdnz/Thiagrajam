@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import HTTPException, Response, status,Depends
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -21,6 +22,17 @@ app = FastAPI(
     description="Simple ORM CRUD API built with FastAPI",
     version="1.0.0",
 )
+
+origins =["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # app.include_router(post.router)
 app.include_router(users.router)
