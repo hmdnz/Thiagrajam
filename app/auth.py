@@ -15,12 +15,16 @@ router = APIRouter(
 @router.post("/login")
 def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
 
-    db_user = db.query(models.User).filter(
-        or_(
-            models.User.email == user.email,
-            models.User.phone_number == user.phone_number
-        )
-    ).first()
+    filters = []
+    if user.email:
+        filters.append(models.User.email == user.email)
+    if user.phone_number:
+        filters.append(models.User.phone_number == user.phone_number)
+
+    if not filters:
+        raise HTTPException(status_code=400, detail="Email or phone number required")
+
+    db_user = db.query(models.User).filter(or_(*filters)).first()
 
     if not db_user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -31,6 +35,26 @@ def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
     access_token = oauth2.create_access_token(data={"user_id": db_user.id})
 
     return {"access_token": access_token, "token_type": "bearer"}
+
+# @router.post("/login")
+# def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
+
+#     db_user = db.query(models.User).filter(
+#         or_(
+#             models.User.email == user.email,
+#             models.User.phone_number == user.phone_number
+#         )
+#     ).first()
+
+#     if not db_user:
+#         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+#     if not utils.verify(user.password, db_user.password):
+#         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+#     access_token = oauth2.create_access_token(data={"user_id": db_user.id})
+
+#     return {"access_token": access_token, "token_type": "bearer"}
 
 # @router.post("/login")
 # def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
