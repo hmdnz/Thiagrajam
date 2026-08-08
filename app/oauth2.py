@@ -9,6 +9,8 @@ from . import models
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 
+from .config import settings
+
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
@@ -101,3 +103,22 @@ def get_current_user(
         raise credentials_exception
 
     return user
+
+
+def create_email_verification_token(user_id: int):
+    expire = datetime.utcnow() + timedelta(hours=24)
+    to_encode = {"user_id": user_id, "scope": "email_verification", "exp": expire}
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def verify_email_verification_token(token: str, credentials_exception):
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("scope") != "email_verification":
+            raise credentials_exception
+        user_id = payload.get("user_id")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    return user_id

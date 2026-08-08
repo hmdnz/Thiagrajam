@@ -123,15 +123,29 @@ class UserLogin(BaseModel):
 
         return self
 
+# class ForgotPassword(BaseModel):
+#     email: Optional[EmailStr] = None
+#     phone_number: Optional[str] = None
+
+#     @model_validator(mode="after")
+#     def validate_contact(self):
+#         if not self.email and not self.phone_number:
+#             raise ValueError("A valid email or phone number must be provided.")
+#         return self
+
+
 class ForgotPassword(BaseModel):
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     phone_number: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_contact(self):
         if not self.email and not self.phone_number:
             raise ValueError("A valid email or phone number must be provided.")
+        if self.email and self.phone_number:
+            raise ValueError("Provide either an email or a phone number, not both.")
         return self
+
 
 
 class ResetPassword(BaseModel):

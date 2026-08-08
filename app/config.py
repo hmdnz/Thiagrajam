@@ -3,10 +3,6 @@ from pydantic_settings import BaseSettings
 
 # class Settings(BaseSettings):
 
-
-
-
-
 class Settings(BaseSettings):
     DATABASE_HOSTNAME: str
     DATABASE_PORT: int
@@ -16,12 +12,13 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    ZOHO_EMAIL: str
+    ZOHO_APP_PASSWORD: str
+    SMTP_SERVER: str
+    SMTP_PORT: int
 
     class Config:
         env_file = ".env"
 
 
 settings = Settings()
-
-   
-
