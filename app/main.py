@@ -6,7 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from . import  models, auth
 import time
-from .routers import post, profile, users,phone_auth, users2 
+from .routers import post, profile, users, users2 
 from .database import engine, get_db
 
 
@@ -52,7 +52,6 @@ app.add_middleware(
 
 # app.include_router(post.router)
 app.include_router(users2.router)
-app.include_router(phone_auth.router)
 app.include_router(auth.router) 
 app.include_router(profile.router)
 
