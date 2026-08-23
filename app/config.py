@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     SMTP_PORT: int
 
 # Termii Configuration
-#     TERMII_API_KEY: str
-#     TERMII_SENDER_ID: str = "Termii"          
-#     TERMII_BASE_URL: str = "https://api.ng.termii.com/api"
+    TERMII_API_KEY: str
+    TERMII_SENDER_ID: str = "Termii"          
+    TERMII_BASE_URL: str = "https://api.ng.termii.com/api"
 
 
 
