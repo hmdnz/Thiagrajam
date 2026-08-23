@@ -35,10 +35,16 @@ app = FastAPI(
 
 
 origins = [
-      "https://your-app.netlify.app",
+    "https://wenyfour-neww.vercel.app",
     "https://wenyfour.com",
+    "https://www.wenyfour.com",
+    "https://wenyfour.com.ng",
+    "https://www.wenyfour.com.ng",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000",
+    "http://13.247.98.20:8000",
 ]
-
 
 app.add_middleware(
     CORSMiddleware,
