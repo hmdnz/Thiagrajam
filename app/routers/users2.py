@@ -330,14 +330,6 @@ def create_user(
         db.add(verification_record)
         db.commit()
 
-        # Dispatch Twilio SMS via BackgroundTasks
-        background_tasks.add_task(
-            send_otp_sms,
-            new_user.phone_number,
-            otp_code,
-            OTP_EXPIRE_MINUTES
-        )
-
     return new_user
 
 
