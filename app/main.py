@@ -18,8 +18,8 @@ models.Base.metadata.create_all(bind=engine)
 
 # Create an instance of FastAPI
 app = FastAPI(
-    title="Wenyfour FastAPI App",
-    description="Simple ORM CRUD API built with FastAPI",
+    title="Wenyfour",
+    description="Car Sharing App",
     version="1.0.0",
 )
 
@@ -44,6 +44,7 @@ origins = [
     "http://localhost:5173",
     "http://localhost:8000",
     "http://13.247.98.20:8000",
+    "https://app.wenyfour.com.ng",
 ]
 
 app.add_middleware(
