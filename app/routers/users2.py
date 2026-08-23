@@ -229,18 +229,20 @@
 #         _send_reset_token(user, reset_token)  # console/SMS fallback for phone-only accounts
 
 #     return generic_response
-
+from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, Response, status, Depends, APIRouter, BackgroundTasks
-from .. import models, schemas, utils, oauth2, email_utils
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from ..database import get_db
+from .. import models, schemas, utils, oauth2, email_utils
+from ..sms_utils import generate_otp, send_otp_sms  # Import your standalone SMS helper
 from typing import List
 from sqlalchemy import or_
 import re
 
 FRONTEND_URL = "https://app.wenyfour.com"
 
+OTP_EXPIRE_MINUTES = 10
 
 router = APIRouter(tags=["Users"])
 
@@ -249,6 +251,8 @@ EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 def _looks_like_email(value: str) -> bool:
     # crude heuristic: contains letters and no digits-only pattern typical of phone numbers
     return "@" in value
+
+# app/routers/users.py (or users2.py)
 
 @router.post(
     "/users",
@@ -261,11 +265,14 @@ def create_user(
     db: Session = Depends(get_db)
 ):
     hashed_password = utils.hash(user.password)
-    user.password = hashed_password
+    user_dict = user.model_dump()
+    user_dict["password"] = hashed_password
 
-    new_user = models.User(**user.model_dump())
+    new_user = models.User(**user_dict)
+    new_user.profile_complete = False
+    new_user.is_active = False
+
     db.add(new_user)
-
     try:
         db.commit()
         db.refresh(new_user)
@@ -284,6 +291,51 @@ def create_user(
             to_email=new_user.email,
             name=new_user.full_name or "there",
             link=verify_link,
+        )
+
+    # Attach token attributes to the returned user object
+    new_user.access_token = oauth2.create_access_token(data={"user_id": new_user.id})
+    new_user.token_type = "bearer"
+
+    return new_user
+    # 1. Email Verification Branch
+    if new_user.email:
+        verify_token = oauth2.create_email_verification_token(new_user.id)
+        verify_link = f"{FRONTEND_URL}/verify-email?token={verify_token}"
+        background_tasks.add_task(
+            email_utils.send_confirmation_email,
+            to_email=new_user.email,
+            name=new_user.full_name or "there",
+            link=verify_link,
+        )
+
+    # 2. Phone OTP Verification Branch
+    elif new_user.phone_number:
+        # Invalidate any prior active OTPs for this number
+        db.query(models.PhoneVerification).filter(
+            models.PhoneVerification.phone_number == new_user.phone_number,
+            models.PhoneVerification.is_used == False
+        ).update({"is_used": True})
+
+        otp_code = generate_otp()
+        hashed_code = utils.hash(otp_code)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRE_MINUTES)
+
+        verification_record = models.PhoneVerification(
+            phone_number=new_user.phone_number,
+            otp_hash=hashed_code,
+            expires_at=expires_at,
+            is_used=False
+        )
+        db.add(verification_record)
+        db.commit()
+
+        # Dispatch Twilio SMS via BackgroundTasks
+        background_tasks.add_task(
+            send_otp_sms,
+            new_user.phone_number,
+            otp_code,
+            OTP_EXPIRE_MINUTES
         )
 
     return new_user
@@ -322,6 +374,7 @@ def verify_email(token: str, db: Session = Depends(get_db)):
         raise credentials_exception
 
     user.is_active = True
+    user.is_verified = True
     db.commit()
     return {"message": "Email verified successfully."}
 

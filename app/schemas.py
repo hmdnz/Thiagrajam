@@ -35,6 +35,7 @@ class UserCreate(BaseModel):
     password: str
     role: UserRoleEnum = UserRoleEnum.passenger  # Default role
 
+    
     @model_validator(mode="after")
     def validate_contact(self):
         email = self.email
@@ -135,6 +136,9 @@ class UserOut(BaseModel):
     profile_complete: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
+
+    access_token: Optional[str] = None
+    token_type: Optional[str] = None
     
     # Computed fields for backward compatibility
     @property

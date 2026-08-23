@@ -21,10 +21,17 @@ class Settings(BaseSettings):
     SMTP_SERVER: str
     SMTP_PORT: int
 
-
+# Termii Configuration
     TERMII_API_KEY: str
     TERMII_SENDER_ID: str = "Termii"          # falls back to shared ID if you haven't registered one
     TERMII_BASE_URL: str = "https://api.ng.termii.com/api"
+
+# Twilio Configuration
+    TWILIO_ACCOUNT_SID: str
+    TWILIO_AUTH_TOKEN: str
+    TWILIO_PHONE_NUMBER: str
+
+
 
     class Config:
         env_file = ".env"
