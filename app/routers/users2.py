@@ -235,7 +235,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from ..database import get_db
 from .. import models, schemas, utils, oauth2, email_utils
-from ..sms_utils import generate_otp, send_otp_sms  # Import your standalone SMS helper
 from typing import List
 from sqlalchemy import or_
 import re
@@ -298,39 +297,7 @@ def create_user(
     new_user.token_type = "bearer"
 
     return new_user
-    # 1. Email Verification Branch
-    if new_user.email:
-        verify_token = oauth2.create_email_verification_token(new_user.id)
-        verify_link = f"{FRONTEND_URL}/verify-email?token={verify_token}"
-        background_tasks.add_task(
-            email_utils.send_confirmation_email,
-            to_email=new_user.email,
-            name=new_user.full_name or "there",
-            link=verify_link,
-        )
 
-    # 2. Phone OTP Verification Branch
-    elif new_user.phone_number:
-        # Invalidate any prior active OTPs for this number
-        db.query(models.PhoneVerification).filter(
-            models.PhoneVerification.phone_number == new_user.phone_number,
-            models.PhoneVerification.is_used == False
-        ).update({"is_used": True})
-
-        otp_code = generate_otp()
-        hashed_code = utils.hash(otp_code)
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRE_MINUTES)
-
-        verification_record = models.PhoneVerification(
-            phone_number=new_user.phone_number,
-            otp_hash=hashed_code,
-            expires_at=expires_at,
-            is_used=False
-        )
-        db.add(verification_record)
-        db.commit()
-
-    return new_user
 
 
 @router.get(
