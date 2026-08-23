@@ -239,7 +239,7 @@ from typing import List
 from sqlalchemy import or_
 import re
 
-FRONTEND_URL = "https://app.wenyfour.com"
+FRONTEND_URL = "https://app.wenyfour.com.ng"
 
 OTP_EXPIRE_MINUTES = 10
 
