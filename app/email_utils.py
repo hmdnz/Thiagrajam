@@ -15,17 +15,21 @@ def _render_template(filename: str, **context) -> str:
 
 
 def send_email(to_email: str, subject: str, template_name: str, **context):
-    html_body = _render_template(template_name, **context)
+    try:
+        html_body = _render_template(template_name, **context)
 
-    msg = MIMEMultipart("alternative")
-    msg["From"] = settings.ZOHO_EMAIL
-    msg["To"] = to_email
-    msg["Subject"] = subject
-    msg.attach(MIMEText(html_body, "html"))
+        msg = MIMEMultipart("alternative")
+        msg["From"] = settings.ZOHO_EMAIL
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(html_body, "html"))
 
-    with smtplib.SMTP_SSL(settings.SMTP_SERVER, settings.SMTP_PORT, timeout=20) as server:
-        server.login(settings.ZOHO_EMAIL, settings.ZOHO_APP_PASSWORD)
-        server.send_message(msg)
+        with smtplib.SMTP_SSL(settings.SMTP_SERVER, settings.SMTP_PORT, timeout=20) as server:
+            server.login(settings.ZOHO_EMAIL, settings.ZOHO_APP_PASSWORD)
+            server.send_message(msg)
+
+    except Exception as e:
+        print(f"[ZOHO SMTP ERROR] Failed to send email to {to_email}: {e}")
 
 
 def send_confirmation_email(to_email: str, name: str, link: str):
@@ -46,5 +50,3 @@ def send_password_reset_email(to_email: str, name: str, link: str):
         name=name,
         link=link,
     )
-
-

@@ -1,39 +1,30 @@
 from pydantic import BaseModel, Field
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import HTTPException, Response, status,Depends
+from fastapi.staticfiles import StaticFiles
+from fastapi import HTTPException, Response, status, Depends
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from . import  models, auth
+from . import models, auth
 import time
-from .routers import post, profile, users, users2 
+import os
+from .routers import post, profile, users, users2, driver, admin
 from .database import engine, get_db
 
 
-
-
-
+# Creates any tables that don't already exist yet. Does NOT apply schema
+# changes to existing tables (e.g. new columns) — those need Alembic.
 models.Base.metadata.create_all(bind=engine)
 
 
-# Create an instance of FastAPI
 app = FastAPI(
     title="Wenyfour",
     description="Car Sharing App",
     version="1.0.0",
 )
 
-# origins =["*"]
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=origins,
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-
-
+# Explicit allow-list of frontends permitted to call this API with
+# credentials. Using "*" would silently break allow_credentials=True.
 origins = [
     "https://wenyfour-neww.vercel.app",
     "https://wenyfour.com",
@@ -55,22 +46,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serves uploaded selfies/licence photos at e.g. /static/uploads/selfies/<file>.
+os.makedirs("static/uploads", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-
-# app.include_router(post.router)
+# app.include_router(post.router)  # left disabled — not currently in use
 app.include_router(users2.router)
-app.include_router(auth.router) 
+app.include_router(auth.router)
 app.include_router(profile.router)
+app.include_router(driver.router)
+app.include_router(admin.router)
 
+# Retries the DB connection every 5s until Postgres is reachable.
 while True:
-
     try:
-        conn = psycopg2.connect(host='localhost', database='fastapi', user='postgres', password='postgres', cursor_factory=RealDictCursor)
+        conn = psycopg2.connect(
+            host='localhost', database='fastapi',
+            user='postgres', password='postgres',
+            cursor_factory=RealDictCursor
+        )
         cursor = conn.cursor()
-        print ("Database connection was successful!")
+        print("Database connection was successful!")
         break
     except Exception as error:
-        print ("Database connection failed!")
-        print ("Error: ", error) 
-        time.sleep(5)  # Wait for 5 seconds before retrying
-
+        print("Database connection failed!")
+        print("Error: ", error)
+        time.sleep(5)
