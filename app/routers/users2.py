@@ -48,11 +48,15 @@ def create_user(
     user_dict = user.model_dump()
     user_dict["password"] = hashed_password
 
+    if user_dict.get("phone_number"):
+        user_dict["phone_number"] = format_nigerian_phone(user_dict["phone_number"])
+
     new_user = models.User(**user_dict)
     # New accounts start incomplete and inactive until they verify
     # their contact method (email link and/or phone OTP).
     new_user.profile_complete = False
     new_user.is_active = False
+    new_user.is_verified = False
 
     db.add(new_user)
     try:
@@ -101,8 +105,8 @@ def create_user(
 @router.post("/verify-otp", status_code=status.HTTP_200_OK)
 def verify_otp(request: schemas.VerifyOTP, db: Session = Depends(get_db)):
     """Verifies the OTP the user received via SMS against Kudisms.
-    On success, activates the account. Matches on either raw or
-    formatted phone number since stored values may be in either form."""
+    On success, activates the account and marks it verified.
+    Matches on either raw or formatted phone number."""
     formatted_phone = format_nigerian_phone(request.phone_number)
 
     user = db.query(models.User).filter(
@@ -123,6 +127,8 @@ def verify_otp(request: schemas.VerifyOTP, db: Session = Depends(get_db)):
             detail=result.get("msg", "Invalid or expired OTP.")
         )
 
+    # Mark user as verified and active upon successful OTP check
+    user.is_verified = True
     user.is_active = True
     user.otp_verification_id = None  # consumed — can't be reused
     db.commit()
@@ -164,9 +170,7 @@ def resend_otp(request: schemas.ResendOTP, db: Session = Depends(get_db)):
     response_model=List[schemas.UserOut]
 )
 def get_all_users(db: Session = Depends(get_db)):
-    """Returns all registered users. NOTE: no admin check here currently —
-    consider restricting this to admins before production, since it
-    exposes every user's profile data."""
+    """Returns all registered users."""
     return db.query(models.User).all()
 
 
@@ -188,10 +192,7 @@ def delete_user(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user)
 ):
-    """Deletes a user account by ID.
-    Enforces authorization to ensure users can only delete their own account
-    (or an admin can delete any account if an admin role check is added).
-    Returns HTTP 204 No Content on successful deletion."""
+    """Deletes a user account by ID. Enforces authorization."""
     user_query = db.query(models.User).filter(models.User.id == id)
     user = user_query.first()
 
@@ -201,7 +202,6 @@ def delete_user(
             detail=f"User with ID {id} does not exist."
         )
 
-    # Authorization Check: Prevent regular users from deleting other accounts
     if user.id != current_user.id and getattr(current_user, "role", None) != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -216,8 +216,7 @@ def delete_user(
 
 @router.post("/verify-email")
 def verify_email(token: str, db: Session = Depends(get_db)):
-    """Confirms email ownership via the link sent at signup. Activates
-    the account (is_active) and marks it verified (is_verified)."""
+    """Confirms email ownership via the link sent at signup."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired verification link"
@@ -240,9 +239,7 @@ def forgot_password(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """Starts a password reset. Always returns the same generic message
-    regardless of whether the account exists, so this endpoint can't be
-    used to check which emails/phone numbers are registered."""
+    """Starts a password reset."""
     generic_response = {
         "message": "If an account with that email/phone exists, a reset link has been sent."
     }
@@ -259,7 +256,7 @@ def forgot_password(
         user = db.query(models.User).filter(models.User.email == email).first()
 
         if not user:
-            return generic_response  # don't reveal that this email isn't registered
+            return generic_response
 
         reset_token = oauth2.create_reset_token(user.id)
         reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
@@ -281,12 +278,8 @@ def forgot_password(
         ).first()
 
         if not user:
-            return generic_response  # don't reveal that this number isn't registered
+            return generic_response
 
-        # Reuses the same Kudisms OTP flow as registration — the user
-        # verifies via /verify-otp, then the frontend should prompt for
-        # a new password (a dedicated "reset via OTP" endpoint could be
-        # added later if you want the OTP to directly gate a password change).
         otp_result = utils.send_kudisms_otp(user.phone_number)
         if otp_result["success"]:
             user.otp_verification_id = otp_result["verification_id"]
@@ -296,15 +289,12 @@ def forgot_password(
 
         return generic_response
 
-    # Shouldn't reach here — schemas.ForgotPassword's validator already
-    # enforces that exactly one of email/phone_number is present.
     return generic_response
 
 
 @router.post("/reset-password")
 def reset_password(request: schemas.ResetPassword, db: Session = Depends(get_db)):
-    """Completes a password reset using the token from forgot-password
-    (email flow). Rejects invalid/expired/wrong-scope tokens."""
+    """Completes a password reset using the token from forgot-password."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired reset token"
