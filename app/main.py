@@ -23,19 +23,40 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
+from sqlalchemy import text
+
+@app.on_event("startup")
+def verify_db_connection():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+            print("==========================================")
+            print("🚀 Database connection successful!")
+            print("==========================================")
+    except Exception as error:
+        print("==========================================")
+        print("❌ Database connection failed!")
+        print(f"Error details: {error}")
+        print("==========================================")
+
+
 # Explicit allow-list of frontends permitted to call this API with
 # credentials. Using "*" would silently break allow_credentials=True.
 origins = [
     "https://wenyfour-neww.vercel.app",
     "https://wenyfour.com",
     "https://www.wenyfour.com",
+    "https://app.wenyfour.com",       
+    "https://api.wenyfour.com",       
     "https://wenyfour.com.ng",
     "https://www.wenyfour.com.ng",
+    "https://app.wenyfour.com.ng",
+    "https://api.wenyfour.com.ng",
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:8000",
     "http://13.247.98.20:8000",
-    "https://app.wenyfour.com.ng",
 ]
 
 app.add_middleware(
@@ -58,17 +79,17 @@ app.include_router(driver.router)
 app.include_router(admin.router)
 
 # Retries the DB connection every 5s until Postgres is reachable.
-while True:
-    try:
-        conn = psycopg2.connect(
-            host='localhost', database='fastapi',
-            user='postgres', password='postgres',
-            cursor_factory=RealDictCursor
-        )
-        cursor = conn.cursor()
-        print("Database connection was successful!")
-        break
-    except Exception as error:
-        print("Database connection failed!")
-        print("Error: ", error)
-        time.sleep(5)
+# while True:
+#     try:
+#         conn = psycopg2.connect(
+#             host='localhost', database='fastapi',
+#             user='postgres', password='postgres',
+#             cursor_factory=RealDictCursor
+#         )
+#         cursor = conn.cursor()
+#         print("Database connection was successful!")
+#         break
+#     except Exception as error:
+#         print("Database connection failed!")
+#         print("Error: ", error)
+#         time.sleep(5)
