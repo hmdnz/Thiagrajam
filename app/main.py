@@ -11,6 +11,7 @@ import os
 from .routers import post, profile, users, users2, driver, admin
 from .database import engine, get_db
 
+from sqlalchemy.orm import Session
 
 # Creates any tables that don't already exist yet. Does NOT apply schema
 # changes to existing tables (e.g. new columns) — those need Alembic.
@@ -93,3 +94,23 @@ app.include_router(admin.router)
 #         print("Database connection failed!")
 #         print("Error: ", error)
 #         time.sleep(5)
+
+@app.get("/health", tags=["System"])
+def health_check(db: Session = Depends(get_db)):
+    try:
+        # Run a lightweight ping query
+        db.execute(text("SELECT 1"))
+        return {
+            "status": "online",
+            "database": "connected",
+            "message": "FastAPI engine and PostgreSQL database are healthy"
+        }
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": "degraded",
+                "database": "disconnected",
+                "error": str(error)
+            }
+        )
