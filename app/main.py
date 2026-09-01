@@ -9,9 +9,16 @@ from . import models, auth
 import time
 import os
 from .routers import post, profile, users, users2, driver, admin
-from .database import engine, get_db
+from .database import engine, get_db, Base
 
 from sqlalchemy.orm import Session
+
+from app import auth
+from app.routers import  profile, driver
+from app.admin import routers as admin_router
+from app.cars import routers as cars_router
+from app.bookings import routers as bookings_router
+
 
 # Creates any tables that don't already exist yet. Does NOT apply schema
 # changes to existing tables (e.g. new columns) — those need Alembic.
@@ -77,23 +84,12 @@ app.include_router(users2.router)
 app.include_router(auth.router)
 app.include_router(profile.router)
 app.include_router(driver.router)
-app.include_router(admin.router)
+#  
 
-# Retries the DB connection every 5s until Postgres is reachable.
-# while True:
-#     try:
-#         conn = psycopg2.connect(
-#             host='localhost', database='fastapi',
-#             user='postgres', password='postgres',
-#             cursor_factory=RealDictCursor
-#         )
-#         cursor = conn.cursor()
-#         print("Database connection was successful!")
-#         break
-#     except Exception as error:
-#         print("Database connection failed!")
-#         print("Error: ", error)
-#         time.sleep(5)
+# Modular domain routes
+app.include_router(admin_router.router)
+app.include_router(cars_router.router)
+app.include_router(bookings_router.router)
 
 @app.get("/health", tags=["System"])
 def health_check(db: Session = Depends(get_db)):
