@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from . import models, schemas, utils, oauth2, email_utils
@@ -18,18 +19,17 @@ def format_nigerian_phone(phone: str) -> str:
     return clean_phone
 
 
-def _get_user_by_identifier(db: Session, email: str | None, phone_number: str | None):
-    filters = []
-    if email:
-        filters.append(models.User.email == email.strip())
-    if phone_number:
-        raw_phone = phone_number.strip()
-        formatted_phone = format_nigerian_phone(raw_phone)
-        filters.append(models.User.phone_number == raw_phone)
-        filters.append(models.User.phone_number == formatted_phone)
-    if not filters:
-        return None
-    return db.query(models.User).filter(or_(*filters)).first()
+def _get_user_by_identifier(db: Session, identifier: str):
+    identifier = identifier.strip()
+    formatted_phone = format_nigerian_phone(identifier)
+    
+    return db.query(models.User).filter(
+        or_(
+            models.User.email == identifier,
+            models.User.phone_number == identifier,
+            models.User.phone_number == formatted_phone
+        )
+    ).first()
 
 
 def _send_verification(db: Session, user: models.User, purpose: str = "signup"):
@@ -60,12 +60,18 @@ def _issue_token(user: models.User) -> dict:
 
 
 @router.post("/login")
-def login(payload: schemas.UserLogin, db: Session = Depends(get_db)):
-    user = _get_user_by_identifier(db, payload.email, payload.phone_number)
-    if not user or not utils.verify(payload.password, user.password):
+def login(
+    user_credentials: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    # 'username' accepts either email or phone number in Swagger UI / Form Data
+    user = _get_user_by_identifier(db, user_credentials.username)
+    
+    if not user or not utils.verify(user_credentials.password, user.password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     if not user.is_verified:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your account first.")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your account is deactivated.")
+        
     return _issue_token(user)
