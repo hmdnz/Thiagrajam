@@ -1,7 +1,7 @@
 """
 app/models.py
 
-Schema (single-role User + normalized DriverProfile for driver-only fields):
+Schema (single-role User + normalized DriverProfile for driver-only fields and travel preferences):
 """
 
 from sqlalchemy import (
@@ -45,6 +45,32 @@ class VerificationStatusEnum(enum.Enum):
     pending = "pending"         # selfie/document submitted, awaiting AI/manual check
     verified = "verified"       # confirmed match
     failed = "failed"           # AI check ran and did not match / was rejected
+
+
+# ---- Driver Travel Preferences Enums ----
+
+class ChattinessEnum(enum.Enum):
+    very_talkative = "Very talkative!"
+    warm_up = "I chat once I warm up"
+    quiet = "Quiet rider"
+
+
+class MusicEnum(enum.Enum):
+    always_playing = "Always playing tunes!"
+    depends_on_mood = "Music depends on the mood"
+    no_music = "Prefer no music"
+
+
+class SmokingEnum(enum.Enum):
+    allowed = "Smoking allowed in the vehicle"
+    outside_breaks = "Smoke breaks outside the car only"
+    no_smoking = "Strictly smoke-free ride"
+
+
+class PetsEnum(enum.Enum):
+    pet_friendly = "Pet-friendly ride!"
+    case_by_case = "Open to pets depending on type/size"
+    no_pets = "No pets allowed"
 
 
 # ---------------------------------------------------------------
@@ -168,6 +194,12 @@ class DriverProfile(Base):
     license_photo_url = Column(String, nullable=True)
     license_expiry_date = Column(Date, nullable=True)
     about_me = Column(Text, nullable=True)
+
+    # ---- Driver Travel Preferences ----
+    chattiness = Column(Enum(ChattinessEnum), nullable=True)
+    music = Column(Enum(MusicEnum), nullable=True)
+    smoking = Column(Enum(SmokingEnum), nullable=True)
+    pets = Column(Enum(PetsEnum), nullable=True)
 
     license_verification_status = Column(
         Enum(VerificationStatusEnum),

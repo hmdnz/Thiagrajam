@@ -7,7 +7,10 @@ from enum import Enum
 # Import the enums from models - SINGLE SOURCE OF TRUTH.
 # Schemas should never redefine these enums separately, or they'll
 # eventually drift out of sync with the actual database columns.
-from .models import UserRoleEnum, BloodGroupEnum, VerificationStatusEnum
+from .models import (
+    UserRoleEnum, BloodGroupEnum, VerificationStatusEnum,
+    ChattinessEnum, MusicEnum, SmokingEnum, PetsEnum
+)
 
 # Re-export for convenience, so other files can `from .schemas import UserRole`
 # instead of reaching into .models directly.
@@ -219,9 +222,6 @@ class TokenData(BaseModel):
 # ==========================================================
 # PASSENGER / USER PROFILE SCHEMAS
 # ==========================================================
-# These mirror models.User's real columns exactly. The old version of
-# this schema referenced a `bio` field that was never an actual column
-# on User, so it silently never persisted — removed here.
 
 class UserProfileUpdate(BaseModel):
     """Used for every profile save — partial or full. Nothing is required,
@@ -275,6 +275,11 @@ class DriverProfileUpdate(BaseModel):
     file, not JSON."""
     license_number: Optional[str] = None  # locked after first submission — enforced in the route
     license_expiry_date: Optional[date] = None
+    about_me: Optional[str] = None
+    chattiness: Optional[ChattinessEnum] = None
+    music: Optional[MusicEnum] = None
+    smoking: Optional[SmokingEnum] = None
+    pets: Optional[PetsEnum] = None
 
 class DriverProfileOut(BaseModel):
     """What GET/PUT /profile/driver and the licence-photo upload return."""
@@ -283,6 +288,11 @@ class DriverProfileOut(BaseModel):
     license_number: Optional[str] = None
     license_photo_url: Optional[str] = None
     license_expiry_date: Optional[date] = None
+    about_me: Optional[str] = None
+    chattiness: Optional[ChattinessEnum] = None
+    music: Optional[MusicEnum] = None
+    smoking: Optional[SmokingEnum] = None
+    pets: Optional[PetsEnum] = None
     license_verification_status: VerificationStatusEnum
     license_verification_notes: Optional[str] = None
 
@@ -298,3 +308,4 @@ class AdminRejection(BaseModel):
     `reason` is optional but strongly recommended — it's what gets
     shown back to the user via nin_verification_notes / license_verification_notes."""
     reason: Optional[str] = None
+    
