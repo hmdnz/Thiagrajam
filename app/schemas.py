@@ -276,12 +276,11 @@ class UserProfileUpdate(BaseModel):
     blood_group: Optional[BloodGroupEnum] = None
     health_conditions: Optional[str] = None
     nin: Optional[str] = None
-    photo_url: str = Field(
-        ..., 
+    photo_url: Optional[str] = Field(
+        default=None, 
         json_schema_extra={"example": "https://example.com/photos/avatar.png"}
     )
 
-    model_config = ConfigDict(from_attributes=True)
     model_config = ConfigDict(from_attributes=True)
 
 
