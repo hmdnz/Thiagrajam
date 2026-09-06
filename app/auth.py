@@ -48,7 +48,7 @@ def _issue_token(user: models.User) -> dict:
     roles = [{
         "role": role_str,
         "profile_complete": user.profile_complete,
-        "verification_status": None
+        "nin_verified": user.nin_verified
     }]
     return {
         "access_token": access_token,
@@ -69,8 +69,7 @@ def login(
     
     if not user or not utils.verify(user_credentials.password, user.password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    if not user.is_verified:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your account first.")
+        
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your account is deactivated.")
         

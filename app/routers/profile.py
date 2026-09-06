@@ -69,15 +69,15 @@ def update_my_profile(
     current_user: models.User = Depends(oauth2.get_current_user),
 ):
     """
-    Updates text fields (name, gender, etc.). Locked NIN after initial submission.
+    Updates text fields (name, gender, photo_url, etc.). 
+    Locks NIN after initial submission. Sets profile_complete to True upon save.
     """
-    # 1. FIX: Convert Pydantic model to dictionary
-    # exclude_unset=True is critical for partial updates (multi-step forms)
-    # as it ignores any field the frontend did not explicitly include 
+    # 1. Convert Pydantic model to dictionary.
+    # exclude_unset=True allows partial updates if desired, though photo_url
+    # will be updated whenever supplied in the request body.
     update_data = updates.model_dump(exclude_unset=True)
 
-    # --- Start of Existing Logic Integration ---
-    
+    # --- Start NIN Lock Logic ---
     # Lock NIN after initial submission
     # (Allow submitting the same value, block submitting a DIFFERENT value)
     if "nin" in update_data and current_user.nin is not None:
@@ -86,33 +86,36 @@ def update_my_profile(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="NIN has already been submitted and cannot be changed.",
             )
-        del update_data["nin"] # no-op, drop it
+        del update_data["nin"]  # Drop field if it matches existing value (no-op)
 
-    # Track if NIN is being submitted for the first time
+    # Track if NIN is being submitted for the very first time
     submitting_new_nin = "nin" in update_data and current_user.nin is None
-    
-    # --- End of Existing Logic Integration ---
+    # --- End NIN Lock Logic ---
 
-    # 2. Apply updates to the current_user ORM object
-    # This loop correctly sets fields like full_name, gender, blood_group, etc 
+    # 2. Apply updates dynamically to the current_user ORM object
+    # This correctly sets full_name, photo_url, gender, blood_group, etc.
     for field, value in update_data.items():
         setattr(current_user, field, value)
 
-    # If submitting new NIN, clear notes and set status to pending
+    # If submitting a new NIN, reset verification status to pending
     if submitting_new_nin:
         current_user.nin_verification_status = models.VerificationStatusEnum.pending
         current_user.nin_verification_notes = None
 
-    # 3. Trigger recalculation of completion status 
-    # By calling this now, we verify if the new updates satisfy the logic in models.py 
-    current_user.update_profile_complete()
+    # 3. Force profile_complete boolean to True as requested
+    current_user.profile_complete = True
 
+    # Recalculate dynamic status if helper method exists on model
+    if hasattr(current_user, "update_profile_complete"):
+        current_user.update_profile_complete()
+        # Re-enforce True to prevent helper method from overriding explicit setup
+        current_user.profile_complete = True
+
+    # 4. Save changes to database
     try:
-        # 4. Commit changes to the database 
         db.commit()
         db.refresh(current_user)
     except IntegrityError:
-        # Most likely cause: NIN collides with another user's unique NIN
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -120,7 +123,6 @@ def update_my_profile(
         )
 
     return current_user
-
 
 # ==============================================================================
 # 3. IMAGE UPLOAD ENDPOINTS (POST)

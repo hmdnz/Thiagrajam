@@ -85,7 +85,7 @@ class User(Base):
     phone_number = Column(String, unique=True, nullable=True, index=True)
     password = Column(String, nullable=False)
 
-    is_verified = Column(Boolean, server_default="false", nullable=False)
+    nin_verified = Column(Boolean, server_default="false", nullable=False)
     is_active = Column(Boolean, server_default="true", nullable=False)
     is_admin = Column(Boolean, server_default="false", nullable=False)
 
@@ -96,7 +96,7 @@ class User(Base):
     address = Column(String, nullable=True)
     date_of_birth = Column(Date, nullable=True)
     gender = Column(Enum(GenderEnum), nullable=True)
-    image = Column(String, nullable=True)  # Profile photo URL
+    # image = Column(String, nullable=True)  # Profile photo URL
 
     # ---- Next of kin / emergency ----
     next_of_kin_name = Column(String, nullable=True)

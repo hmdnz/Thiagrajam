@@ -55,7 +55,7 @@ def create_user(
     # New accounts start incomplete and inactive until they verify
     # their contact method (email link and/or phone OTP).
     new_user.profile_complete = False
-    new_user.is_active = False
+    new_user.is_active = False 
     new_user.is_verified = False
 
     db.add(new_user)
@@ -128,7 +128,7 @@ def verify_otp(request: schemas.VerifyOTP, db: Session = Depends(get_db)):
         )
 
     # Mark user as verified and active upon successful OTP check
-    user.is_verified = True
+    user.is_verified = False  # 
     user.is_active = True
     user.otp_verification_id = None  # consumed — can't be reused
     db.commit()
@@ -228,7 +228,7 @@ def verify_email(token: str, db: Session = Depends(get_db)):
         raise credentials_exception
 
     user.is_active = True
-    user.is_verified = True
+    user.is_verified = False
     db.commit()
     return {"message": "Email verified successfully."}
 
