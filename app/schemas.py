@@ -1,20 +1,37 @@
-from typing import Optional, Literal
+
+"""
+app/schemas.py
+
+Pydantic Schemas for Request/Response Validation.
+Includes Enums, User, Profile, Driver Profile, and Auth schemas[cite: 1].
+Re-exports database Enums to keep them synchronized with the models[cite: 1].
+"""
+
+from typing import Optional, List
 from pydantic import BaseModel, Field, EmailStr, model_validator, ConfigDict
 from datetime import datetime, date
 import re
-from enum import Enum
 
 # Import the enums from models - SINGLE SOURCE OF TRUTH.
 # Schemas should never redefine these enums separately, or they'll
-# eventually drift out of sync with the actual database columns.
+# eventually drift out of sync with the actual database columns[cite: 1].
 from .models import (
-    UserRoleEnum, BloodGroupEnum, VerificationStatusEnum,
+    UserRoleEnum, GenderEnum, BloodGroupEnum, VerificationStatusEnum,
     ChattinessEnum, MusicEnum, SmokingEnum, PetsEnum
 )
 
 # Re-export for convenience, so other files can `from .schemas import UserRole`
-# instead of reaching into .models directly.
+# instead of reaching into .models directly[cite: 1].
 UserRole = UserRoleEnum
+Gender = GenderEnum
+BloodGroup = BloodGroupEnum
+VerificationStatus = VerificationStatusEnum
+
+# Preferences
+DriverChattiness = ChattinessEnum
+DriverMusic = MusicEnum
+DriverSmoking = SmokingEnum
+DriverPets = PetsEnum
 
 # ==========================================================
 # POST SCHEMAS
@@ -47,7 +64,8 @@ class UserCreate(BaseModel):
     email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
     password: str
-    role: UserRoleEnum = UserRoleEnum.passenger  # Default role
+    # DEFAULT role is passenger (we enforce becoming a driver via /me/become-driver)
+    role: UserRoleEnum = UserRoleEnum.passenger
 
     @model_validator(mode="after")
     def validate_contact(self):
@@ -65,7 +83,7 @@ class UserCreate(BaseModel):
         if not email and not phone:
             raise ValueError("A valid email or phone number must be provided.")
 
-        # Validate phone if provided
+        # Validate phone format if provided
         if phone:
             if len(phone) > 15:
                 raise ValueError(
@@ -88,7 +106,7 @@ class UserLogin(BaseModel):
     def validate_contact(self):
         # Same validation logic as UserCreate — kept duplicated here
         # rather than shared, since login/registration schemas are allowed
-        # to diverge later without affecting each other.
+        # to diverge later without affecting each other[cite: 1].
         email = self.email
         phone = self.phone_number
 
@@ -131,7 +149,7 @@ class ResetPassword(BaseModel):
     token: str
     new_password: str = Field(..., min_length=8)
 
-def validate_password_strength(password: str) -> list[str]:
+def validate_password_strength(password: str) -> List[str]:
     """Returns a list of human-readable error strings for any password
     strength rule that's violated. Empty list means the password passes."""
     errors = []
@@ -162,6 +180,7 @@ class UserOut(BaseModel):
     email: EmailStr | None = None
     phone_number: str | None = None
     is_active: bool
+    is_verified: bool
     role: UserRoleEnum
     profile_complete: bool
     created_at: datetime
@@ -220,33 +239,57 @@ class TokenData(BaseModel):
 
 
 # ==========================================================
+# DRIVER TRAVEL PREFERENCES SCHEMA
+# ==========================================================
+# A single schema to handle viewing driver preferences Informally.
+# Used inside DriverProfileOut and Ride listings[cite: 1, 2].
+
+class DriverPreferencesResponse(BaseModel):
+    """
+    Shows informational preferences. Frontend maps these enums to icons.
+    All fields optional as drivers aren't required to set them all[cite: 1, 2].
+    """
+    chattiness: Optional[ChattinessEnum] = None
+    music: Optional[MusicEnum] = None
+    smoking: Optional[SmokingEnum] = None
+    pets: Optional[PetsEnum] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==========================================================
 # PASSENGER / USER PROFILE SCHEMAS
 # ==========================================================
 
 class UserProfileUpdate(BaseModel):
     """Used for every profile save — partial or full. Nothing is required,
-    so the frontend can submit one field at a time in a multi-step form.
+    so the frontend can submit one field at a time in a multi-step form[cite: 1].
     Selfie upload is handled separately via POST /profile/me/selfie
     since it's a file, not JSON."""
     full_name: Optional[str] = None
     address: Optional[str] = None
     date_of_birth: Optional[date] = None
+    gender: Optional[GenderEnum] = None  # <--- LOCKED: MUST BE PRESENT!
+    phone_number: Optional[str] = None  # LOCKED: Allowed for editing existing number
     next_of_kin_name: Optional[str] = None
     next_of_kin_relationship: Optional[str] = None
     emergency_contact: Optional[str] = None
     blood_group: Optional[BloodGroupEnum] = None
     health_conditions: Optional[str] = None
-    nin: Optional[str] = None  # locked after first submission — enforced in the route, not here
+    # NIN locked after first submission — enforced in the route, not here[cite: 1].
+    nin: Optional[str] = None
 
 class UserProfileOut(BaseModel):
     """What GET/PUT /profile/me return. Mirrors every relevant User column
-    so the frontend has everything it needs to render the profile screen."""
+    so the frontend has everything it needs to render the profile screen[cite: 1]."""
     id: int
     email: Optional[str] = None
     phone_number: Optional[str] = None
     full_name: Optional[str] = None
     address: Optional[str] = None
     date_of_birth: Optional[date] = None
+    gender: Optional[GenderEnum] = None
+    image: Optional[str] = None
     next_of_kin_name: Optional[str] = None
     next_of_kin_relationship: Optional[str] = None
     emergency_contact: Optional[str] = None
@@ -273,9 +316,11 @@ class DriverProfileUpdate(BaseModel):
     """Payload for PUT /profile/driver. Licence photo is handled
     separately via POST /profile/driver/license-photo since it's a
     file, not JSON."""
-    license_number: Optional[str] = None  # locked after first submission — enforced in the route
+    license_number: Optional[str] = None  # locked after first submission — enforced in the route[cite: 1].
     license_expiry_date: Optional[date] = None
     about_me: Optional[str] = None
+
+    # ---- Driver Selects Travel Preferences ----
     chattiness: Optional[ChattinessEnum] = None
     music: Optional[MusicEnum] = None
     smoking: Optional[SmokingEnum] = None
@@ -289,10 +334,18 @@ class DriverProfileOut(BaseModel):
     license_photo_url: Optional[str] = None
     license_expiry_date: Optional[date] = None
     about_me: Optional[str] = None
-    chattiness: Optional[ChattinessEnum] = None
-    music: Optional[MusicEnum] = None
-    smoking: Optional[SmokingEnum] = None
-    pets: Optional[PetsEnum] = None
+
+    # ---- Display Preferences to Front End ----
+    # Shows the description strings defined in app/models.py enums.
+    chattiness: Optional[str] = None
+    music: Optional[str] = None
+    smoking: Optional[str] = None
+    pets: Optional[str] = None
+
+    # Forwarded from User model through DriverProfile relationships/properties[cite: 1]
+    gender: Optional[GenderEnum] = None
+    image: Optional[str] = None
+
     license_verification_status: VerificationStatusEnum
     license_verification_notes: Optional[str] = None
 
@@ -308,4 +361,3 @@ class AdminRejection(BaseModel):
     `reason` is optional but strongly recommended — it's what gets
     shown back to the user via nin_verification_notes / license_verification_notes."""
     reason: Optional[str] = None
-    
