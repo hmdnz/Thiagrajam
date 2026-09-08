@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .. import models, schemas, oauth2
 from ..database import get_db
-from .profile import save_image  # reuse the same upload/validation helper as selfies
+from ..s3_service import (upload_profile_image,delete_file_from_s3,)
 
 # All routes here live under /profile/driver/... — keeps driver-specific
 # endpoints clearly separated from the general passenger profile routes.

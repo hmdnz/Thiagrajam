@@ -1,16 +1,29 @@
 """
 app/models.py
 
-Schema (single-role User + normalized DriverProfile for driver-only fields and travel preferences):
+Schema (single-role User + normalized DriverProfile for driver-only fields
+and travel preferences)
 """
 
 from sqlalchemy import (
-    Column, Integer, String, Boolean, ForeignKey, TIMESTAMP, Date, DateTime,
-    Enum, UniqueConstraint, Float, Text, text,
+    Column,
+    Integer,
+    String,
+    Boolean,
+    ForeignKey,
+    TIMESTAMP,
+    Date,
+    DateTime,
+    Enum,
+    Float,
+    Text,
+    text,
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+
 from .database import Base
+
 import enum
 
 
@@ -41,13 +54,15 @@ class BloodGroupEnum(enum.Enum):
 
 
 class VerificationStatusEnum(enum.Enum):
-    unverified = "unverified"   # nothing submitted yet
-    pending = "pending"         # selfie/document submitted, awaiting AI/manual check
-    verified = "verified"       # confirmed match
-    failed = "failed"           # AI check ran and did not match / was rejected
+    unverified = "unverified"
+    pending = "pending"
+    verified = "verified"
+    failed = "failed"
 
 
-# ---- Driver Travel Preferences Enums ----
+# ---------------------------------------------------------------
+# Driver Travel Preferences Enums
+# ---------------------------------------------------------------
 
 class ChattinessEnum(enum.Enum):
     very_talkative = "Very talkative!"
@@ -81,35 +96,116 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
+
     email = Column(String, unique=True, nullable=True, index=True)
-    phone_number = Column(String, unique=True, nullable=True, index=True)
+
+    phone_number = Column(
+        String,
+        unique=True,
+        nullable=True,
+        index=True,
+    )
+
     password = Column(String, nullable=False)
 
-    nin_verified = Column(Boolean, server_default="false", nullable=False)
-    is_active = Column(Boolean, server_default="true", nullable=False)
-    is_admin = Column(Boolean, server_default="false", nullable=False)
+    # -----------------------------------------------------------
+    # Account Status
+    # -----------------------------------------------------------
 
-    otp_verification_id = Column(String, nullable=True)
+    nin_verified = Column(
+        Boolean,
+        server_default="false",
+        nullable=False,
+    )
 
-    # ---- Common profile fields ----
-    full_name = Column(String, nullable=True)
-    address = Column(String, nullable=True)
-    date_of_birth = Column(Date, nullable=True)
-    gender = Column(Enum(GenderEnum), nullable=True)
-    # image = Column(String, nullable=True)  # Profile photo URL
+    is_active = Column(
+        Boolean,
+        server_default="true",
+        nullable=False,
+    )
 
-    # ---- Next of kin / emergency ----
-    next_of_kin_name = Column(String, nullable=True)
-    next_of_kin_relationship = Column(String, nullable=True)
-    emergency_contact = Column(String, nullable=True)
+    is_admin = Column(
+        Boolean,
+        server_default="false",
+        nullable=False,
+    )
 
-    # ---- Health ----
-    blood_group = Column(Enum(BloodGroupEnum), nullable=True)
-    health_conditions = Column(Text, nullable=True)
+    otp_verification_id = Column(
+        String,
+        nullable=True,
+    )
 
-    # ---- Identity / NIN / selfie ----
-    nin = Column(String, unique=True, nullable=True)
-    photo_url = Column(String, nullable=True)  # NIN verification selfie photo
+    # -----------------------------------------------------------
+    # Common Profile Fields
+    # -----------------------------------------------------------
+
+    full_name = Column(
+        String,
+        nullable=True,
+    )
+
+    address = Column(
+        String,
+        nullable=True,
+    )
+
+    date_of_birth = Column(
+        Date,
+        nullable=True,
+    )
+
+    gender = Column(
+        Enum(GenderEnum),
+        nullable=True,
+    )
+
+    # -----------------------------------------------------------
+    # Next Of Kin / Emergency
+    # -----------------------------------------------------------
+
+    next_of_kin_name = Column(
+        String,
+        nullable=True,
+    )
+
+    next_of_kin_relationship = Column(
+        String,
+        nullable=True,
+    )
+
+    emergency_contact = Column(
+        String,
+        nullable=True,
+    )
+
+    # -----------------------------------------------------------
+    # Health Information
+    # -----------------------------------------------------------
+
+    blood_group = Column(
+        Enum(BloodGroupEnum),
+        nullable=True,
+    )
+
+    health_conditions = Column(
+        Text,
+        nullable=True,
+    )
+
+    # -----------------------------------------------------------
+    # Identity / NIN / Profile Photo
+    # -----------------------------------------------------------
+
+    nin = Column(
+        String,
+        unique=True,
+        nullable=True,
+    )
+
+    photo_url = Column(
+        String,
+        nullable=True,
+    )
 
     nin_verification_status = Column(
         Enum(VerificationStatusEnum),
@@ -117,25 +213,74 @@ class User(Base):
         server_default=VerificationStatusEnum.unverified.value,
         nullable=False,
     )
-    nin_verified_at = Column(TIMESTAMP(timezone=True), nullable=True)
-    nin_match_score = Column(Float, nullable=True)
-    nin_verification_notes = Column(String, nullable=True)
 
-    role = Column(Enum(UserRoleEnum), default=UserRoleEnum.passenger, nullable=False)
-    profile_complete = Column(Boolean, server_default="false", nullable=False)
+    nin_verified_at = Column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
 
-    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+    nin_match_score = Column(
+        Float,
+        nullable=True,
+    )
+
+    nin_verification_notes = Column(
+        String,
+        nullable=True,
+    )
+
+    # -----------------------------------------------------------
+    # Role / Profile Completion
+    # -----------------------------------------------------------
+
+    role = Column(
+        Enum(UserRoleEnum),
+        default=UserRoleEnum.passenger,
+        nullable=False,
+    )
+
+    profile_complete = Column(
+        Boolean,
+        server_default="false",
+        nullable=False,
+    )
+
+    # -----------------------------------------------------------
+    # Timestamps
+    # -----------------------------------------------------------
+
+    created_at = Column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
     updated_at = Column(
-        TIMESTAMP(timezone=True), nullable=False,
-        server_default=text("now()"), onupdate=text("now()"),
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+        onupdate=text("now()"),
     )
 
-    # ---- Relationships ----
-    posts = relationship("Post", back_populates="owner")
-    driver_profile = relationship(
-        "DriverProfile", back_populates="user",
-        uselist=False, cascade="all, delete-orphan"
+    # -----------------------------------------------------------
+    # Relationships
+    # -----------------------------------------------------------
+
+    posts = relationship(
+        "Post",
+        back_populates="owner",
     )
+
+    driver_profile = relationship(
+        "DriverProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    # -----------------------------------------------------------
+    # Role Helpers
+    # -----------------------------------------------------------
 
     @property
     def is_passenger(self):
@@ -155,7 +300,12 @@ class User(Base):
         if value:
             self.role = UserRoleEnum.driver
 
+    # -----------------------------------------------------------
+    # Profile Completion
+    # -----------------------------------------------------------
+
     def update_profile_complete(self):
+
         required_fields = [
             self.full_name,
             self.address,
@@ -168,12 +318,25 @@ class User(Base):
             self.nin,
             self.photo_url,
         ]
-        complete = all(field is not None for field in required_fields)
 
+        # Passenger profile is complete only when
+        # all required fields AND profile photo exist
+        complete = all(
+            field is not None
+            for field in required_fields
+        )
+
+        # Drivers must also complete their driver profile
         if self.role == UserRoleEnum.driver:
-            complete = complete and bool(self.driver_profile) and self.driver_profile.is_complete()
+
+            complete = (
+                complete
+                and bool(self.driver_profile)
+                and self.driver_profile.is_complete()
+            )
 
         self.profile_complete = complete
+
         return self.profile_complete
 
 
@@ -184,22 +347,75 @@ class User(Base):
 class DriverProfile(Base):
     __tablename__ = "driver_profiles"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"),
-        unique=True, nullable=False, index=True,
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
     )
 
-    license_number = Column(String, unique=True, nullable=True)
-    license_photo_url = Column(String, nullable=True)
-    license_expiry_date = Column(Date, nullable=True)
-    about_me = Column(Text, nullable=True)
+    user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
 
-    # ---- Driver Travel Preferences ----
-    chattiness = Column(Enum(ChattinessEnum), nullable=True)
-    music = Column(Enum(MusicEnum), nullable=True)
-    smoking = Column(Enum(SmokingEnum), nullable=True)
-    pets = Column(Enum(PetsEnum), nullable=True)
+    # -----------------------------------------------------------
+    # Driver License Information
+    # -----------------------------------------------------------
+
+    license_number = Column(
+        String,
+        unique=True,
+        nullable=True,
+    )
+
+    license_photo_url = Column(
+        String,
+        nullable=True,
+    )
+
+    license_expiry_date = Column(
+        Date,
+        nullable=True,
+    )
+
+    about_me = Column(
+        Text,
+        nullable=True,
+    )
+
+    # -----------------------------------------------------------
+    # Driver Travel Preferences
+    # -----------------------------------------------------------
+
+    chattiness = Column(
+        Enum(ChattinessEnum),
+        nullable=True,
+    )
+
+    music = Column(
+        Enum(MusicEnum),
+        nullable=True,
+    )
+
+    smoking = Column(
+        Enum(SmokingEnum),
+        nullable=True,
+    )
+
+    pets = Column(
+        Enum(PetsEnum),
+        nullable=True,
+    )
+
+    # -----------------------------------------------------------
+    # License Verification
+    # -----------------------------------------------------------
 
     license_verification_status = Column(
         Enum(VerificationStatusEnum),
@@ -207,17 +423,42 @@ class DriverProfile(Base):
         server_default=VerificationStatusEnum.unverified.value,
         nullable=False,
     )
-    license_verification_notes = Column(String, nullable=True)
 
-    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
-    updated_at = Column(
-        TIMESTAMP(timezone=True), nullable=False,
-        server_default=text("now()"), onupdate=text("now()"),
+    license_verification_notes = Column(
+        String,
+        nullable=True,
     )
 
-    user = relationship("User", back_populates="driver_profile")
+    # -----------------------------------------------------------
+    # Timestamps
+    # -----------------------------------------------------------
 
-    # ---- Forwarding properties for non-redundant access ----
+    created_at = Column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+        onupdate=text("now()"),
+    )
+
+    # -----------------------------------------------------------
+    # Relationship
+    # -----------------------------------------------------------
+
+    user = relationship(
+        "User",
+        back_populates="driver_profile",
+    )
+
+    # -----------------------------------------------------------
+    # Forwarding Properties
+    # -----------------------------------------------------------
+
     @property
     def gender(self):
         return self.user.gender if self.user else None
@@ -228,15 +469,6 @@ class DriverProfile(Base):
             self.user.gender = value
 
     @property
-    def image(self):
-        return self.user.image if self.user else None
-
-    @image.setter
-    def image(self, value):
-        if self.user:
-            self.user.image = value
-
-    @property
     def driving_licence_no(self):
         return self.license_number
 
@@ -244,7 +476,12 @@ class DriverProfile(Base):
     def driving_licence_no(self, value):
         self.license_number = value
 
+    # -----------------------------------------------------------
+    # Driver Profile Completion
+    # -----------------------------------------------------------
+
     def is_complete(self) -> bool:
+
         return all([
             self.license_number,
             self.license_photo_url,
@@ -254,30 +491,95 @@ class DriverProfile(Base):
 
 
 # ---------------------------------------------------------------
-# Post & PhoneVerification
+# Post
 # ---------------------------------------------------------------
 
 class Post(Base):
     __tablename__ = "posts"
 
-    id = Column(Integer, primary_key=True, nullable=False)
-    title = Column(String, nullable=False)
-    content = Column(String, nullable=False)
-    published = Column(Boolean, server_default='TRUE', nullable=False)
-    rating = Column(Integer, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(
+        Integer,
+        primary_key=True,
+        nullable=False,
+    )
 
-    owner = relationship("User", back_populates="posts")
+    title = Column(
+        String,
+        nullable=False,
+    )
 
+    content = Column(
+        String,
+        nullable=False,
+    )
+
+    published = Column(
+        Boolean,
+        server_default="TRUE",
+        nullable=False,
+    )
+
+    rating = Column(
+        Integer,
+        nullable=True,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    owner_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+
+    owner = relationship(
+        "User",
+        back_populates="posts",
+    )
+
+
+# ---------------------------------------------------------------
+# Phone Verification
+# ---------------------------------------------------------------
 
 class PhoneVerification(Base):
     __tablename__ = "phone_verifications"
 
-    id = Column(Integer, primary_key=True, index=True)
-    phone_number = Column(String, nullable=False, index=True)
-    otp_hash = Column(String, nullable=False)
-    expires_at = Column(DateTime(timezone=True), nullable=False)
-    is_used = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
 
+    phone_number = Column(
+        String,
+        nullable=False,
+        index=True,
+    )
+
+    otp_hash = Column(
+        String,
+        nullable=False,
+    )
+
+    expires_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    is_used = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
