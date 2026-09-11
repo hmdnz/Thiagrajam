@@ -1,138 +1,529 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+# app/routers/driver.py
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    UploadFile,
+    File,
+)
+
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from .. import models, schemas, oauth2
 from ..database import get_db
-from ..s3_service import (upload_profile_image,delete_file_from_s3,)
+from ..s3_service import (
+    upload_driver_license_image,
+    delete_file_from_s3,
+)
 
-# All routes here live under /profile/driver/... — keeps driver-specific
-# endpoints clearly separated from the general passenger profile routes.
-router = APIRouter(prefix="/profile/driver", tags=["Driver Profile"])
+
+router = APIRouter(
+    prefix="/profile/driver",
+    tags=["Driver Profile"],
+)
 
 
-def _get_driver_profile(current_user: models.User, db: Session) -> models.DriverProfile:
-    """Fetches the current user's DriverProfile, lazily creating an empty
-    row if it doesn't exist. Requires the account to already be in
-    'driver' role (set via POST /profile/me/become-driver)."""
+# ============================================================
+# DRIVER PROFILE HELPERS
+# ============================================================
 
-    # Guard: a passenger account has no business touching driver-only data.
-    if current_user.role != models.UserRoleEnum.driver:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Switch to a driver role first via POST /profile/me/become-driver.",
-        )
+def _get_or_create_driver_profile(
+    current_user: models.User,
+    db: Session,
+) -> models.DriverProfile:
 
-    # The relationship is defined as uselist=False in models.py, so this
-    # is either a single DriverProfile object or None — never a list.
     driver_profile = current_user.driver_profile
 
-    if not driver_profile:
-        # Safety net: normally become_driver() already creates this row,
-        # but this covers any account that switched to driver role before
-        # that logic existed, or via some other path.
-        driver_profile = models.DriverProfile(user_id=current_user.id)
-        db.add(driver_profile)
-        db.commit()
-        db.refresh(driver_profile)  # pulls back the generated id, defaults, etc.
+    if driver_profile:
+        return driver_profile
 
-    return driver_profile
+    driver_profile = models.DriverProfile(
+        user_id=current_user.id
+    )
 
-
-@router.get("", response_model=schemas.DriverProfileOut)
-def get_driver_profile(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(oauth2.get_current_user),  # who's asking
-):
-    """Returns the logged-in driver's licence info and verification status."""
-    # db is passed through even though this route only reads, because
-    # _get_driver_profile may need to create+commit a new row on first call.
-    return _get_driver_profile(current_user, db)
-
-
-@router.put("", response_model=schemas.DriverProfileOut)
-def update_driver_profile(
-    payload: schemas.DriverProfileUpdate,      # validated request body
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(oauth2.get_current_user),
-):
-    """Updates licence number and/or expiry date. Licence photo is
-    uploaded separately via POST /profile/driver/license-photo."""
-    driver_profile = _get_driver_profile(current_user, db)
-
-    # exclude_unset=True means only fields the client actually sent end up
-    # here — omitted fields are left untouched rather than reset to None.
-    update_data = payload.model_dump(exclude_unset=True)
-
-    # Licence number is permanently fixed once first submitted — same
-    # reasoning as NIN elsewhere in the app: prevents quietly swapping in
-    # a different real person's licence after initial approval.
-    if "license_number" in update_data and driver_profile.license_number is not None:
-        if update_data["license_number"] != driver_profile.license_number:
-            # Genuinely trying to change it — reject.
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Licence number has already been submitted and cannot be changed.",
-            )
-        # Same value sent again (e.g. form re-submits everything each save) —
-        # treat as a no-op rather than an error.
-        del update_data["license_number"]
-
-    # Apply whatever's left (license_number if new, and/or license_expiry_date).
-    for field, value in update_data.items():
-        setattr(driver_profile, field, value)
-
-    # Any genuine change here means the previous admin approval (if any)
-    # no longer applies to the current data — force re-review.
-    if update_data:
-        driver_profile.license_verification_status = models.VerificationStatusEnum.pending
-        driver_profile.license_verification_notes = None  # clear any old rejection reason
+    db.add(driver_profile)
 
     try:
+
         db.commit()
-        db.refresh(driver_profile)
-    except IntegrityError:
-        # Most likely cause: license_number collides with another driver's
-        # (it's a unique column) — surface a clear message instead of a raw 500.
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Licence number already registered to another account.",
+
+        db.refresh(
+            driver_profile
         )
 
-    # Driver-side changes can flip the overall profile_complete flag on
-    # the User row (see User.update_profile_complete in models.py),
-    # so recompute it and commit that separately.
-    current_user.update_profile_complete()
-    db.commit()
+    except IntegrityError:
+
+        db.rollback()
+
+        driver_profile = (
+            db.query(models.DriverProfile)
+            .filter(
+                models.DriverProfile.user_id
+                == current_user.id
+            )
+            .first()
+        )
+
+        if not driver_profile:
+
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to create driver profile.",
+            )
 
     return driver_profile
 
 
-@router.post("/license-photo", response_model=schemas.DriverProfileOut)
-def upload_license_photo(
-    file: UploadFile = File(...),   # multipart file upload, not JSON
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(oauth2.get_current_user),
+# ============================================================
+# DRIVER APPLICATION ELIGIBILITY
+# ============================================================
+
+def _require_driver_application_eligibility(
+    current_user: models.User,
 ):
-    """Handles the licence photo upload separately from the JSON update,
-    since file uploads use multipart/form-data, not JSON."""
-    driver_profile = _get_driver_profile(current_user, db)
+    """
+    A user must:
 
-    # save_image validates file type/size, writes to static/uploads/licenses/,
-    # and returns the public URL path to store on the model.
-    driver_profile.license_photo_url = save_image(file, "licenses")
+    1. Complete the common profile.
+    2. Have a verified NIN.
 
-    # A new/changed licence photo always needs a fresh admin look,
-    # regardless of whether license_number/expiry also changed.
-    driver_profile.license_verification_status = models.VerificationStatusEnum.pending
+    before applying to become a driver.
+    """
+
+    if not current_user.profile_complete:
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Please complete your passenger profile "
+                "before applying to become a driver."
+            ),
+        )
+
+    if (
+        current_user.nin_verification_status
+        != models.VerificationStatusEnum.verified
+    ):
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Your NIN must be verified before "
+                "you can apply to become a driver."
+            ),
+        )
+
+
+# ============================================================
+# GET DRIVER PROFILE
+# GET /profile/driver
+# ============================================================
+
+@router.get(
+    "",
+    response_model=schemas.DriverProfileOut,
+)
+def get_driver_profile(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(
+        oauth2.get_current_user
+    ),
+):
+
+    return _get_or_create_driver_profile(
+        current_user=current_user,
+        db=db,
+    )
+
+
+# ============================================================
+# UPDATE DRIVER PROFILE
+# PUT /profile/driver
+# ============================================================
+
+@router.put(
+    "",
+    response_model=schemas.DriverProfileOut,
+)
+def update_driver_profile(
+    payload: schemas.DriverProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(
+        oauth2.get_current_user
+    ),
+):
+
+    # ========================================================
+    # CHECK PASSENGER PROFILE + NIN
+    # ========================================================
+
+    _require_driver_application_eligibility(
+        current_user
+    )
+
+    # ========================================================
+    # GET OR CREATE DRIVER PROFILE
+    # ========================================================
+
+    driver_profile = _get_or_create_driver_profile(
+        current_user=current_user,
+        db=db,
+    )
+
+    update_data = payload.model_dump(
+        exclude_unset=True
+    )
+
+    if not update_data:
+        return driver_profile
+
+    # ========================================================
+    # LICENCE NUMBER PROTECTION
+    # ========================================================
+
+    if (
+        "license_number" in update_data
+        and driver_profile.license_number is not None
+    ):
+
+        submitted_license_number = (
+            update_data["license_number"]
+        )
+
+        existing_license_number = (
+            driver_profile.license_number
+        )
+
+        if (
+            submitted_license_number
+            != existing_license_number
+        ):
+
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Licence number has already been "
+                    "submitted and cannot be changed."
+                ),
+            )
+
+        del update_data["license_number"]
+
+    # ========================================================
+    # CHECK WHETHER LICENCE VERIFICATION IS AFFECTED
+    # ========================================================
+
+    verification_required = any(
+        field in update_data
+        for field in [
+            "license_number",
+            "license_expiry_date",
+        ]
+    )
+
+    # ========================================================
+    # UPDATE DRIVER FIELDS
+    # ========================================================
+
+    for field, value in update_data.items():
+
+        setattr(
+            driver_profile,
+            field,
+            value,
+        )
+
+    # ========================================================
+    # RESET VERIFICATION WHEN LICENCE INFORMATION CHANGES
+    # ========================================================
+
+    if verification_required:
+
+        driver_profile.license_verification_status = (
+            models.VerificationStatusEnum.pending
+        )
+
+        driver_profile.license_verification_notes = None
+
+    # ========================================================
+    # DRIVER PROFILE COMPLETE
+    # ========================================================
+
+    if driver_profile.is_complete():
+
+        if (
+            driver_profile.license_verification_status
+            == models.VerificationStatusEnum.unverified
+        ):
+
+            driver_profile.license_verification_status = (
+                models.VerificationStatusEnum.pending
+            )
+
+            driver_profile.license_verification_notes = None
+
+    # ========================================================
+    # SAVE
+    # ========================================================
+
+    try:
+
+        db.commit()
+
+        db.refresh(
+            driver_profile
+        )
+
+    except IntegrityError:
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Licence number is already registered "
+                "to another account."
+            ),
+        )
+
+    return driver_profile
+
+
+# ============================================================
+# UPLOAD DRIVER LICENCE PHOTO
+# POST /profile/driver/license-photo
+# ============================================================
+
+@router.post(
+    "/license-photo",
+    response_model=schemas.DriverProfileOut,
+)
+async def upload_license_photo(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(
+        oauth2.get_current_user
+    ),
+):
+
+    # ========================================================
+    # CHECK PASSENGER PROFILE + NIN
+    # ========================================================
+
+    _require_driver_application_eligibility(
+        current_user
+    )
+
+    # ========================================================
+    # GET DRIVER PROFILE
+    # ========================================================
+
+    driver_profile = _get_or_create_driver_profile(
+        current_user=current_user,
+        db=db,
+    )
+
+    # ========================================================
+    # FILE TYPE
+    # ========================================================
+
+    allowed_types = {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    }
+
+    if file.content_type not in allowed_types:
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Only JPEG, PNG, or WEBP images "
+                "are allowed."
+            ),
+        )
+
+    # ========================================================
+    # READ FILE
+    # ========================================================
+
+    try:
+
+        file_content = await file.read()
+
+    except Exception as error:
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Unable to read uploaded licence image. "
+                f"Error: {str(error)}"
+            ),
+        )
+
+    # ========================================================
+    # SIZE
+    # ========================================================
+
+    max_size = 5 * 1024 * 1024
+
+    if len(file_content) == 0:
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded licence image is empty.",
+        )
+
+    if len(file_content) > max_size:
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Licence image must be smaller than 5MB."
+            ),
+        )
+
+    # ========================================================
+    # OLD PHOTO
+    # ========================================================
+
+    old_license_photo_key = (
+        driver_profile.license_photo_url
+    )
+
+    new_license_photo_key = None
+
+    # ========================================================
+    # UPLOAD TO S3
+    # ========================================================
+
+    try:
+
+        new_license_photo_key = (
+            upload_driver_license_image(
+                file_content=file_content,
+                content_type=file.content_type,
+                user_id=current_user.id,
+            )
+        )
+
+    except ValueError as error:
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        )
+
+    except RuntimeError as error:
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        )
+
+    except Exception as error:
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Failed to upload licence photo. "
+                f"Error: {str(error)}"
+            ),
+        )
+
+    if not new_license_photo_key:
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Licence photo was uploaded but "
+                "no S3 file key was returned."
+            ),
+        )
+
+    # ========================================================
+    # SAVE NEW KEY
+    # ========================================================
+
+    driver_profile.license_photo_url = (
+        new_license_photo_key
+    )
+
+    # ========================================================
+    # LICENCE MUST BE VERIFIED AGAIN
+    # ========================================================
+
+    driver_profile.license_verification_status = (
+        models.VerificationStatusEnum.pending
+    )
+
     driver_profile.license_verification_notes = None
 
-    db.commit()
-    db.refresh(driver_profile)
+    # ========================================================
+    # SAVE DATABASE
+    # ========================================================
 
-    # Same reasoning as above: photo completeness feeds into profile_complete.
-    current_user.update_profile_complete()
-    db.commit()
+    try:
+
+        db.commit()
+
+        db.refresh(
+            driver_profile
+        )
+
+    except Exception as error:
+
+        db.rollback()
+
+        if new_license_photo_key:
+
+            try:
+
+                delete_file_from_s3(
+                    new_license_photo_key
+                )
+
+            except Exception as delete_error:
+
+                print(
+                    "Warning: Failed to delete newly "
+                    "uploaded licence photo from S3: "
+                    f"{delete_error}"
+                )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Failed to save licence photo "
+                f"information. Error: {str(error)}"
+            ),
+        )
+
+    # ========================================================
+    # DELETE OLD PHOTO
+    # ========================================================
+
+    if (
+        old_license_photo_key
+        and old_license_photo_key
+        != new_license_photo_key
+    ):
+
+        try:
+
+            delete_file_from_s3(
+                old_license_photo_key
+            )
+
+        except Exception as error:
+
+            print(
+                "Warning: Failed to delete old "
+                "licence photo: "
+                f"{error}"
+            )
 
     return driver_profile

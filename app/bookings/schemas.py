@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from datetime import datetime
+
 from app.bookings.models import BookingStatusEnum
+
 
 class BookingCreate(BaseModel):
     car_id: int
@@ -8,6 +10,7 @@ class BookingCreate(BaseModel):
     destination: str
     fare: float
     seats_booked: int = 1
+
 
 class BookingOut(BookingCreate):
     id: int

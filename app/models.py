@@ -1,8 +1,16 @@
 """
 app/models.py
 
-Schema (single-role User + normalized DriverProfile for driver-only fields
-and travel preferences)
+Wenyfour database models.
+
+Business rules:
+
+- Every registered user is a passenger.
+- A user may optionally have a DriverProfile.
+- Driver capability exists only when the DriverProfile is verified.
+- profile_complete refers only to the common passenger profile.
+- can_book_rides requires completed profile + verified NIN.
+- can_offer_rides requires an approved/verified DriverProfile.
 """
 
 from sqlalchemy import (
@@ -61,7 +69,7 @@ class VerificationStatusEnum(enum.Enum):
 
 
 # ---------------------------------------------------------------
-# Driver Travel Preferences Enums
+# Driver Travel Preferences
 # ---------------------------------------------------------------
 
 class ChattinessEnum(enum.Enum):
@@ -95,9 +103,18 @@ class PetsEnum(enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
 
-    email = Column(String, unique=True, nullable=True, index=True)
+    email = Column(
+        String,
+        unique=True,
+        nullable=True,
+        index=True,
+    )
 
     phone_number = Column(
         String,
@@ -106,7 +123,10 @@ class User(Base):
         index=True,
     )
 
-    password = Column(String, nullable=False)
+    password = Column(
+        String,
+        nullable=False,
+    )
 
     # -----------------------------------------------------------
     # Account Status
@@ -230,9 +250,14 @@ class User(Base):
     )
 
     # -----------------------------------------------------------
-    # Role / Profile Completion
+    # Legacy Role / Profile Completion
     # -----------------------------------------------------------
 
+    # Kept for database compatibility.
+    #
+    # IMPORTANT:
+    # This field is NOT used to determine whether a user is
+    # actually an approved driver.
     role = Column(
         Enum(UserRoleEnum),
         default=UserRoleEnum.passenger,
@@ -279,32 +304,15 @@ class User(Base):
     )
 
     # -----------------------------------------------------------
-    # Role Helpers
-    # -----------------------------------------------------------
-
-    @property
-    def is_passenger(self):
-        return self.role == UserRoleEnum.passenger
-
-    @property
-    def is_driver(self):
-        return self.role == UserRoleEnum.driver
-
-    @is_passenger.setter
-    def is_passenger(self, value):
-        if value:
-            self.role = UserRoleEnum.passenger
-
-    @is_driver.setter
-    def is_driver(self, value):
-        if value:
-            self.role = UserRoleEnum.driver
-
-    # -----------------------------------------------------------
     # Profile Completion
     # -----------------------------------------------------------
 
     def update_profile_complete(self):
+        """
+        Checks completion of the user's common/passenger profile.
+
+        Driver information is intentionally NOT included here.
+        """
 
         required_fields = [
             self.full_name,
@@ -319,25 +327,81 @@ class User(Base):
             self.photo_url,
         ]
 
-        # Passenger profile is complete only when
-        # all required fields AND profile photo exist
-        complete = all(
-            field is not None
+        self.profile_complete = all(
+            field is not None and field != ""
             for field in required_fields
         )
 
-        # Drivers must also complete their driver profile
-        if self.role == UserRoleEnum.driver:
-
-            complete = (
-                complete
-                and bool(self.driver_profile)
-                and self.driver_profile.is_complete()
-            )
-
-        self.profile_complete = complete
-
         return self.profile_complete
+
+    # -----------------------------------------------------------
+    # Account Capabilities
+    # -----------------------------------------------------------
+
+    @property
+    def is_passenger(self) -> bool:
+        """
+        Every registered Wenyfour user is a passenger.
+        """
+
+        return True
+
+    @property
+    def has_driver_application(self) -> bool:
+        """
+        True if the user has a DriverProfile.
+        """
+
+        return self.driver_profile is not None
+
+    @property
+    def driver_application_status(self):
+        """
+        Returns the current driver verification status.
+
+        None means the user has not started a driver application.
+        """
+
+        if self.driver_profile is None:
+            return None
+
+        return self.driver_profile.license_verification_status
+
+    @property
+    def is_driver(self) -> bool:
+        """
+        A user is a driver ONLY when the driver application
+        has been approved/verified.
+        """
+
+        return (
+            self.driver_profile is not None
+            and self.driver_profile.license_verification_status
+            == VerificationStatusEnum.verified
+        )
+
+    @property
+    def can_book_rides(self) -> bool:
+        """
+        A passenger can book rides only when:
+
+        1. Common profile is complete.
+        2. NIN has been verified.
+        """
+
+        return (
+            self.profile_complete
+            and self.nin_verification_status
+            == VerificationStatusEnum.verified
+        )
+
+    @property
+    def can_offer_rides(self) -> bool:
+        """
+        Only an approved/verified driver can offer rides.
+        """
+
+        return self.is_driver
 
 
 # ---------------------------------------------------------------
@@ -365,7 +429,7 @@ class DriverProfile(Base):
     )
 
     # -----------------------------------------------------------
-    # Driver License Information
+    # Driver Licence Information
     # -----------------------------------------------------------
 
     license_number = Column(
@@ -414,7 +478,7 @@ class DriverProfile(Base):
     )
 
     # -----------------------------------------------------------
-    # License Verification
+    # Licence Verification
     # -----------------------------------------------------------
 
     license_verification_status = Column(
@@ -481,6 +545,10 @@ class DriverProfile(Base):
     # -----------------------------------------------------------
 
     def is_complete(self) -> bool:
+        """
+        Checks whether the required driver application
+        information has been supplied.
+        """
 
         return all([
             self.license_number,

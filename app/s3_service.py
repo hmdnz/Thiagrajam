@@ -1,5 +1,6 @@
+# app/s3_service.py
+
 import uuid
-from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
@@ -8,7 +9,7 @@ from .config import settings
 
 
 # ============================================================
-# S3 CLIENT
+# AWS S3 CLIENT
 # ============================================================
 
 s3_client = boto3.client(
@@ -20,7 +21,7 @@ s3_client = boto3.client(
 
 
 # ============================================================
-# IMAGE CONFIGURATION
+# IMAGE SETTINGS
 # ============================================================
 
 ALLOWED_IMAGE_TYPES = {
@@ -30,12 +31,29 @@ ALLOWED_IMAGE_TYPES = {
 }
 
 MAX_FILE_SIZE_MB = 5
-MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+MAX_FILE_SIZE_BYTES = (
+    MAX_FILE_SIZE_MB * 1024 * 1024
+)
 
 
-def validate_image(file_content: bytes, content_type: str):
+# ============================================================
+# VALIDATE IMAGE
+# ============================================================
+
+def validate_image(
+    file_content: bytes,
+    content_type: str,
+):
     """
-    Validate uploaded image.
+    Validates uploaded image content.
+
+    Allowed:
+        JPEG
+        PNG
+        WEBP
+
+    Maximum:
+        5 MB
     """
 
     if content_type not in ALLOWED_IMAGE_TYPES:
@@ -43,16 +61,21 @@ def validate_image(file_content: bytes, content_type: str):
             "Only JPEG, PNG, or WEBP images are allowed."
         )
 
-    if len(file_content) == 0:
+    if not file_content:
         raise ValueError(
             "Uploaded file is empty."
         )
 
     if len(file_content) > MAX_FILE_SIZE_BYTES:
         raise ValueError(
-            f"Image must be smaller than {MAX_FILE_SIZE_MB}MB."
+            f"Image must be smaller than "
+            f"{MAX_FILE_SIZE_MB}MB."
         )
 
+
+# ============================================================
+# UPLOAD PROFILE IMAGE
+# ============================================================
 
 def upload_profile_image(
     *,
@@ -61,26 +84,33 @@ def upload_profile_image(
     user_id: int,
 ) -> str:
     """
-    Upload a user's profile image to S3.
+    Uploads a user's profile photo.
 
-    Returns:
-        S3 object key
+    S3 path:
+
+        users/{user_id}/profile/{filename}
     """
 
-    validate_image(file_content, content_type)
+    validate_image(
+        file_content=file_content,
+        content_type=content_type,
+    )
 
-    # Get the correct extension
-    extension = ALLOWED_IMAGE_TYPES[content_type]
+    extension = ALLOWED_IMAGE_TYPES[
+        content_type
+    ]
 
-    # Generate unique filename
-    filename = f"{uuid.uuid4().hex}{extension}"
+    filename = (
+        f"{uuid.uuid4().hex}"
+        f"{extension}"
+    )
 
-    # S3 folder structure
     s3_key = (
         f"users/{user_id}/profile/{filename}"
     )
 
     try:
+
         s3_client.put_object(
             Bucket=settings.AWS_S3_BUCKET,
             Key=s3_key,
@@ -89,16 +119,84 @@ def upload_profile_image(
         )
 
     except ClientError as error:
+
         raise RuntimeError(
-            f"Failed to upload image to S3: {error}"
+            f"Failed to upload profile image to S3: {error}"
         )
 
     return s3_key
 
 
-def delete_file_from_s3(s3_key: str):
+# ============================================================
+# UPLOAD DRIVER LICENCE IMAGE
+# ============================================================
+
+def upload_driver_license_image(
+    *,
+    file_content: bytes,
+    content_type: str,
+    user_id: int,
+) -> str:
     """
-    Delete an old file from S3.
+    Uploads a driver's licence photo.
+
+    S3 path:
+
+        users/{user_id}/driver/license/{filename}
+
+    This is deliberately separate from the normal
+    profile-photo path.
+    """
+
+    validate_image(
+        file_content=file_content,
+        content_type=content_type,
+    )
+
+    extension = ALLOWED_IMAGE_TYPES[
+        content_type
+    ]
+
+    filename = (
+        f"{uuid.uuid4().hex}"
+        f"{extension}"
+    )
+
+    s3_key = (
+        f"users/{user_id}/driver/license/{filename}"
+    )
+
+    try:
+
+        s3_client.put_object(
+            Bucket=settings.AWS_S3_BUCKET,
+            Key=s3_key,
+            Body=file_content,
+            ContentType=content_type,
+        )
+
+    except ClientError as error:
+
+        raise RuntimeError(
+            f"Failed to upload driver licence image to S3: {error}"
+        )
+
+    return s3_key
+
+
+# ============================================================
+# DELETE FILE FROM S3
+# ============================================================
+
+def delete_file_from_s3(
+    s3_key: str,
+):
+    """
+    Deletes a file from S3.
+
+    Failure to delete is intentionally ignored so that
+    an S3 cleanup problem does not break an otherwise
+    successful database operation.
     """
 
     if not s3_key:
@@ -112,18 +210,26 @@ def delete_file_from_s3(s3_key: str):
         )
 
     except ClientError:
-        # Don't crash profile update if old image
-        # cannot be deleted.
         pass
 
+
+# ============================================================
+# GENERATE PRESIGNED URL
+# ============================================================
 
 def generate_presigned_url(
     s3_key: str,
     expires_in: int = 3600,
 ) -> str:
     """
-    Generate temporary private URL for frontend.
+    Generates a temporary URL for accessing a private
+    S3 object.
     """
+
+    if not s3_key:
+        raise ValueError(
+            "S3 file key is required."
+        )
 
     try:
 

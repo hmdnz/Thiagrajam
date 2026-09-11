@@ -1,3 +1,437 @@
+# from fastapi import (
+#     APIRouter,
+#     Depends,
+#     HTTPException,
+#     status,
+#     UploadFile,
+#     File,
+# )
+
+# from sqlalchemy.orm import Session
+# from sqlalchemy.exc import IntegrityError
+
+# from .. import models, schemas, oauth2
+# from ..database import get_db
+# from ..s3_service import (
+#     upload_profile_image,
+#     delete_file_from_s3,
+# )
+
+
+# router = APIRouter(
+#     prefix="/profile",
+#     tags=["Profile"],
+# )
+
+
+# # ============================================================
+# # IMAGE SETTINGS
+# # ============================================================
+
+# ALLOWED_IMAGE_TYPES = {
+#     "image/jpeg",
+#     "image/png",
+#     "image/webp",
+# }
+
+# MAX_FILE_SIZE_MB = 5
+
+
+# # ============================================================
+# # CHECK PROFILE INFORMATION
+# # ============================================================
+
+# def profile_information_complete(
+#     user: models.User,
+# ) -> bool:
+#     """
+#     Checks all required common profile information.
+
+#     Photo is intentionally excluded because this function
+#     is used before the photo upload endpoint.
+#     """
+
+#     required_fields = [
+#         user.full_name,
+#         user.address,
+#         user.phone_number,
+#         user.date_of_birth,
+#         user.gender,
+#         user.next_of_kin_name,
+#         user.emergency_contact,
+#         user.blood_group,
+#         user.nin,
+#     ]
+
+#     return all(
+#         field is not None and field != ""
+#         for field in required_fields
+#     )
+
+
+# # ============================================================
+# # UPDATE PROFILE
+# # PUT /profile/me
+# # ============================================================
+
+# @router.put(
+#     "/me",
+#     response_model=schemas.UserProfileOut,
+# )
+# def update_my_profile(
+#     updates: schemas.UserProfileUpdate,
+#     db: Session = Depends(get_db),
+#     current_user: models.User = Depends(
+#         oauth2.get_current_user
+#     ),
+# ):
+#     """
+#     Updates the common passenger profile.
+#     """
+
+#     update_data = updates.model_dump(
+#         exclude_unset=True
+#     )
+
+#     # ========================================================
+#     # NIN LOCK
+#     # ========================================================
+
+#     if (
+#         "nin" in update_data
+#         and current_user.nin is not None
+#     ):
+
+#         if update_data["nin"] != current_user.nin:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail=(
+#                     "NIN has already been submitted "
+#                     "and cannot be changed."
+#                 ),
+#             )
+
+#         del update_data["nin"]
+
+#     # ========================================================
+#     # NEW NIN
+#     # ========================================================
+
+#     submitting_new_nin = (
+#         "nin" in update_data
+#         and current_user.nin is None
+#     )
+
+#     # ========================================================
+#     # UPDATE FIELDS
+#     # ========================================================
+
+#     for field, value in update_data.items():
+
+#         if field == "photo_url":
+#             continue
+
+#         setattr(
+#             current_user,
+#             field,
+#             value,
+#         )
+
+#     # ========================================================
+#     # NIN VERIFICATION
+#     # ========================================================
+
+#     if submitting_new_nin:
+
+#         current_user.nin_verification_status = (
+#             models.VerificationStatusEnum.pending
+#         )
+
+#         current_user.nin_verified = False
+
+#         current_user.nin_verified_at = None
+
+#         current_user.nin_match_score = None
+
+#         current_user.nin_verification_notes = None
+
+#     # ========================================================
+#     # PROFILE COMPLETION
+#     # ========================================================
+
+#     current_user.update_profile_complete()
+
+#     # ========================================================
+#     # SAVE
+#     # ========================================================
+
+#     try:
+
+#         db.commit()
+
+#         db.refresh(
+#             current_user
+#         )
+
+#     except IntegrityError:
+
+#         db.rollback()
+
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=(
+#                 "NIN or another unique identifier "
+#                 "already belongs to another user."
+#             ),
+#         )
+
+#     return current_user
+
+
+# # ============================================================
+# # UPLOAD PROFILE PHOTO
+# # POST /profile/me/photo
+# # ============================================================
+
+# @router.post(
+#     "/me/photo",
+#     response_model=schemas.UserProfileOut,
+# )
+# async def upload_profile_photo(
+#     file: UploadFile = File(...),
+#     db: Session = Depends(get_db),
+#     current_user: models.User = Depends(
+#         oauth2.get_current_user
+#     ),
+# ):
+#     """
+#     Uploads the user's profile photo to S3.
+#     """
+
+#     # ========================================================
+#     # CHECK PROFILE INFORMATION
+#     # ========================================================
+
+#     if not profile_information_complete(
+#         current_user
+#     ):
+
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=(
+#                 "Please complete all required profile "
+#                 "information before uploading your photo."
+#             ),
+#         )
+
+#     # ========================================================
+#     # FILE TYPE
+#     # ========================================================
+
+#     if file.content_type not in ALLOWED_IMAGE_TYPES:
+
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=(
+#                 "Only JPEG, PNG, or WEBP images "
+#                 "are allowed."
+#             ),
+#         )
+
+#     # ========================================================
+#     # READ FILE
+#     # ========================================================
+
+#     try:
+
+#         file_content = await file.read()
+
+#     except Exception as error:
+
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=(
+#                 "Unable to read uploaded image. "
+#                 f"Error: {str(error)}"
+#             ),
+#         )
+
+#     # ========================================================
+#     # FILE SIZE
+#     # ========================================================
+
+#     max_size = (
+#         MAX_FILE_SIZE_MB
+#         * 1024
+#         * 1024
+#     )
+
+#     if len(file_content) == 0:
+
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Uploaded image is empty.",
+#         )
+
+#     if len(file_content) > max_size:
+
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=(
+#                 f"Image must be smaller than "
+#                 f"{MAX_FILE_SIZE_MB}MB."
+#             ),
+#         )
+
+#     # ========================================================
+#     # OLD PHOTO
+#     # ========================================================
+
+#     old_photo_key = current_user.photo_url
+
+#     new_photo_key = None
+
+#     # ========================================================
+#     # UPLOAD TO S3
+#     # ========================================================
+
+#     try:
+
+#         new_photo_key = upload_profile_image(
+#             file_content=file_content,
+#             content_type=file.content_type,
+#             user_id=current_user.id,
+#         )
+
+#     except ValueError as error:
+
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=str(error),
+#         )
+
+#     except RuntimeError as error:
+
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=str(error),
+#         )
+
+#     except Exception as error:
+
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=(
+#                 "Failed to upload profile photo. "
+#                 f"Error: {str(error)}"
+#             ),
+#         )
+
+#     if not new_photo_key:
+
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=(
+#                 "Profile photo was uploaded but "
+#                 "no S3 file key was returned."
+#             ),
+#         )
+
+#     # ========================================================
+#     # SAVE NEW PHOTO KEY
+#     # ========================================================
+
+#     current_user.photo_url = new_photo_key
+
+#     # ========================================================
+#     # PHOTO CHANGE REQUIRES NIN REVERIFICATION
+#     # ========================================================
+
+#     if current_user.nin:
+
+#         current_user.nin_verification_status = (
+#             models.VerificationStatusEnum.pending
+#         )
+
+#         current_user.nin_verified = False
+
+#         current_user.nin_verified_at = None
+
+#         current_user.nin_match_score = None
+
+#         current_user.nin_verification_notes = None
+
+#     # ========================================================
+#     # RECALCULATE PROFILE
+#     # ========================================================
+
+#     current_user.update_profile_complete()
+
+#     # ========================================================
+#     # SAVE DATABASE
+#     # ========================================================
+
+#     try:
+
+#         db.commit()
+
+#         db.refresh(
+#             current_user
+#         )
+
+#     except Exception as error:
+
+#         db.rollback()
+
+#         if new_photo_key:
+
+#             try:
+
+#                 delete_file_from_s3(
+#                     new_photo_key
+#                 )
+
+#             except Exception as delete_error:
+
+#                 print(
+#                     "Warning: Failed to delete newly "
+#                     "uploaded S3 photo: "
+#                     f"{delete_error}"
+#                 )
+
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=(
+#                 "Failed to save profile photo "
+#                 f"information. Error: {str(error)}"
+#             ),
+#         )
+
+#     # ========================================================
+#     # DELETE OLD PHOTO
+#     # ========================================================
+
+#     if (
+#         old_photo_key
+#         and old_photo_key != new_photo_key
+#     ):
+
+#         try:
+
+#             delete_file_from_s3(
+#                 old_photo_key
+#             )
+
+#         except Exception as error:
+
+#             print(
+#                 "Warning: Failed to delete old "
+#                 f"S3 photo: {error}"
+#             )
+
+#     return current_user
+
+
 from fastapi import (APIRouter,Depends,HTTPException,status,
                      UploadFile,File,
 )

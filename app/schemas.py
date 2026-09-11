@@ -1,111 +1,166 @@
 """
 app/schemas.py
 
-Pydantic Schemas for Request/Response Validation.
-Includes Enums, User, Profile, Driver Profile, and Auth schemas.
-Re-exports database Enums to keep them synchronized with the models.
+Pydantic schemas for request/response validation.
+
+Includes:
+- Post schemas
+- Authentication schemas
+- User schemas
+- Profile schemas
+- Driver profile schemas
+- Admin schemas
 """
 
 from typing import Optional, List
-from pydantic import BaseModel, Field, EmailStr, model_validator, ConfigDict
-from datetime import datetime, date
-import re
 
-# Import the enums from models - SINGLE SOURCE OF TRUTH.
-# Schemas should never redefine these enums separately, or they'll
-# eventually drift out of sync with the actual database columns.
-from .models import (
-    UserRoleEnum, GenderEnum, BloodGroupEnum, VerificationStatusEnum,
-    ChattinessEnum, MusicEnum, SmokingEnum, PetsEnum
+from pydantic import (
+    BaseModel,
+    Field,
+    EmailStr,
+    model_validator,
+    ConfigDict,
 )
 
-# Re-export for convenience, so other files can `from .schemas import UserRole`
-# instead of reaching into .models directly.
+from datetime import datetime, date
+
+import re
+
+from .models import (
+    UserRoleEnum,
+    GenderEnum,
+    BloodGroupEnum,
+    VerificationStatusEnum,
+    ChattinessEnum,
+    MusicEnum,
+    SmokingEnum,
+    PetsEnum,
+)
+
+
+# ---------------------------------------------------------------
+# Enum aliases
+# ---------------------------------------------------------------
+
 UserRole = UserRoleEnum
 Gender = GenderEnum
 BloodGroup = BloodGroupEnum
 VerificationStatus = VerificationStatusEnum
 
-# Preferences
 DriverChattiness = ChattinessEnum
 DriverMusic = MusicEnum
 DriverSmoking = SmokingEnum
 DriverPets = PetsEnum
 
-# ==========================================================
+
+# ===============================================================
 # POST SCHEMAS
-# ==========================================================
+# ===============================================================
 
 class PostBase(BaseModel):
-    # Shared fields between creating and reading a post.
-    title: str = Field(..., min_length=1, max_length=200)
-    content: str = Field(..., min_length=1)
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+    )
+
+    content: str = Field(
+        ...,
+        min_length=1,
+    )
+
     published: bool = True
-    rating: Optional[int] = Field(default=None, ge=0, le=5)
+
+    rating: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=5,
+    )
+
 
 class PostCreate(PostBase):
-    # Nothing extra needed for creation — inherits everything from PostBase.
     pass
 
+
 class PostResponse(PostBase):
-    # What gets returned to the client — adds server-generated fields.
     id: int
     created_at: datetime
-    model_config = ConfigDict(from_attributes=True)  # allows building this from an ORM object directly
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
 
-# ==========================================================
+# ===============================================================
 # AUTH / USER ACCOUNT SCHEMAS
-# ==========================================================
+# ===============================================================
 
 class UserCreate(BaseModel):
-    """Payload for POST /users (registration)."""
+    """
+    Payload for POST /users.
+
+    New accounts are passengers by default.
+
+    Driver status is NOT granted through registration.
+    Driver status requires a verified DriverProfile.
+    """
+
     email: Optional[EmailStr] = None
+
     phone_number: Optional[str] = None
+
     password: str
-    # DEFAULT role is passenger (we enforce becoming a driver via /me/become-driver)
+
+    # Kept for compatibility with the existing API.
+    # It must NOT be used to grant driver capability.
     role: UserRoleEnum = UserRoleEnum.passenger
 
     @model_validator(mode="after")
     def validate_contact(self):
-        """Ensures the user gave at least a valid email or phone number,
-        and that a provided phone number is well-formed."""
         email = self.email
         phone = self.phone_number
 
-        # Remove whitespace
         if isinstance(phone, str):
             phone = phone.strip()
             self.phone_number = phone
 
-        # Either email or phone must be provided
         if not email and not phone:
-            raise ValueError("A valid email or phone number must be provided.")
+            raise ValueError(
+                "A valid email or phone number must be provided."
+            )
 
-        # Validate phone format if provided
         if phone:
             if len(phone) > 15:
                 raise ValueError(
-                    "Phone number must not exceed 15 characters including the '+' sign."
+                    "Phone number must not exceed 15 characters "
+                    "including the '+' sign."
                 )
-            if not re.fullmatch(r"\+?\d{1,14}", phone):
+
+            if not re.fullmatch(
+                r"^\+?\d{1,14}$",
+                phone,
+            ):
                 raise ValueError(
-                    "Phone number must contain only digits and may start with a single '+'."
+                    "Phone number must contain only digits "
+                    "and may start with a single '+'."
                 )
 
         return self
 
+
 class UserLogin(BaseModel):
-    """Payload for POST /login."""
+    """
+    Payload for POST /login.
+    """
+
     email: Optional[EmailStr] = None
+
     phone_number: Optional[str] = None
+
     password: str
 
     @model_validator(mode="after")
     def validate_contact(self):
-        # Same validation logic as UserCreate — kept duplicated here
-        # rather than shared, since login/registration schemas are allowed
-        # to diverge later without affecting each other.
         email = self.email
         phone = self.phone_number
 
@@ -114,252 +169,449 @@ class UserLogin(BaseModel):
             self.phone_number = phone
 
         if not email and not phone:
-            raise ValueError("A valid email or phone number must be provided.")
+            raise ValueError(
+                "A valid email or phone number must be provided."
+            )
 
         if phone:
             if len(phone) > 15:
                 raise ValueError(
-                    "Phone number must not exceed 15 characters including the '+' sign."
+                    "Phone number must not exceed 15 characters "
+                    "including the '+' sign."
                 )
-            if not re.fullmatch(r"\+?\d{1,14}", phone):
+
+            if not re.fullmatch(
+                r"^\+?\d{1,14}$",
+                phone,
+            ):
                 raise ValueError(
-                    "Phone number must contain only digits and may start with a single '+'."
+                    "Phone number must contain only digits "
+                    "and may start with a single '+'."
                 )
 
         return self
 
+
 class ForgotPassword(BaseModel):
-    """Payload for POST /forgot-password. Exactly one of email/phone_number
-    must be given — never both, never neither."""
+    """
+    Payload for forgot password.
+
+    Exactly one of email or phone_number must be supplied.
+    """
+
     email: Optional[str] = None
+
     phone_number: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_contact(self):
         if not self.email and not self.phone_number:
-            raise ValueError("A valid email or phone number must be provided.")
+            raise ValueError(
+                "A valid email or phone number must be provided."
+            )
+
         if self.email and self.phone_number:
-            raise ValueError("Provide either an email or a phone number, not both.")
+            raise ValueError(
+                "Provide either an email or a phone number, not both."
+            )
+
         return self
 
-class ResetPassword(BaseModel):
-    """Payload for POST /reset-password. `token` is the reset JWT
-    emailed/texted to the user."""
-    token: str
-    new_password: str = Field(..., min_length=8)
 
-def validate_password_strength(password: str) -> List[str]:
-    """Returns a list of human-readable error strings for any password
-    strength rule that's violated. Empty list means the password passes."""
+class ResetPassword(BaseModel):
+    """
+    Payload for resetting password.
+    """
+
+    token: str
+
+    new_password: str = Field(
+        ...,
+        min_length=8,
+    )
+
+
+def validate_password_strength(
+    password: str,
+) -> List[str]:
+    """
+    Returns password strength errors.
+    """
+
     errors = []
+
     if not re.search(r"[A-Z]", password):
-        errors.append("Password must contain at least one uppercase letter.")
+        errors.append(
+            "Password must contain at least one uppercase letter."
+        )
+
     if not re.search(r"[a-z]", password):
-        errors.append("Password must contain at least one lowercase letter.")
+        errors.append(
+            "Password must contain at least one lowercase letter."
+        )
+
     if not re.search(r"\d", password):
-        errors.append("Password must contain at least one number.")
+        errors.append(
+            "Password must contain at least one number."
+        )
+
     if not re.search(r"[^\w\s]", password):
-        errors.append("Password must contain at least one special character.")
+        errors.append(
+            "Password must contain at least one special character."
+        )
+
     return errors
 
+
 class VerifyOTP(BaseModel):
-    """Payload for POST /verify-otp."""
+    """
+    Payload for POST /verify-otp.
+    """
+
     phone_number: str
     otp: str
 
 
 class ResendOTP(BaseModel):
-    """Payload for POST /resend-otp."""
+    """
+    Payload for POST /resend-otp.
+    """
+
     phone_number: str
 
+
+# ===============================================================
+# USER RESPONSE
+# ===============================================================
+
 class UserOut(BaseModel):
-    """What gets returned after registration/login. Includes the JWT
-    so the frontend can store it immediately without a second request."""
+    """
+    User response returned to the React frontend.
+
+    Capability fields are computed from the user's actual
+    verification/application state.
+    """
+
     id: int
-    email: EmailStr | None = None
-    phone_number: str | None = None
+
+    email: Optional[EmailStr] = None
+
+    phone_number: Optional[str] = None
+
     is_active: bool
+
     nin_verified: bool
+
     role: UserRoleEnum
+
     profile_complete: bool
+
+    # -----------------------------------------------------------
+    # Capability fields
+    # -----------------------------------------------------------
+
+    is_passenger: bool
+
+    is_driver: bool
+
+    has_driver_application: bool
+
+    driver_application_status: Optional[
+        VerificationStatusEnum
+    ] = None
+
+    can_book_rides: bool
+
+    can_offer_rides: bool
+
     created_at: datetime
+
     updated_at: Optional[datetime] = None
 
-    # Populated manually in the create_user route — not real DB columns.
+    # -----------------------------------------------------------
+    # Authentication response fields
+    # -----------------------------------------------------------
+
     access_token: Optional[str] = None
+
     token_type: Optional[str] = None
 
-    # Computed fields for backward compatibility with older frontend code
-    # that expects boolean role flags instead of a single `role` enum.
-    @property
-    def is_passenger(self) -> bool:
-        return self.role == UserRoleEnum.passenger
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
-    @property
-    def is_driver(self) -> bool:
-        return self.role == UserRoleEnum.driver
-
-    model_config = ConfigDict(from_attributes=True)
 
 class ChangePasswordRequest(BaseModel):
-    """Payload for changing password while logged in (different from the
-    forgot-password/reset-password flow, which doesn't need the old password)."""
-    current_password: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=8, max_length=128)
-    confirm_password: str = Field(..., min_length=8, max_length=128)
+    """
+    Payload for changing password while logged in.
+    """
+
+    current_password: str = Field(
+        ...,
+        min_length=1,
+    )
+
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+    )
+
+    confirm_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+    )
 
     @model_validator(mode="after")
     def check_passwords(self):
         if self.new_password != self.confirm_password:
-            raise ValueError("new_password and confirm_password do not match.")
-        if self.new_password == self.current_password:
-            raise ValueError("New password must be different from the current password.")
+            raise ValueError(
+                "new_password and confirm_password do not match."
+            )
 
-        errors = validate_password_strength(self.new_password)
+        if self.new_password == self.current_password:
+            raise ValueError(
+                "New password must be different from "
+                "the current password."
+            )
+
+        errors = validate_password_strength(
+            self.new_password
+        )
+
         if errors:
-            raise ValueError(" ".join(errors))
+            raise ValueError(
+                " ".join(errors)
+            )
 
         return self
 
+
 class UserRoleUpdate(BaseModel):
-    """Schema for updating just the user's role directly (kept for any
-    existing endpoint that switches role without going through
-    /profile/me/become-driver)."""
+    """
+    Legacy schema kept for compatibility.
+
+    IMPORTANT:
+    Changing this value does NOT determine actual driver
+    capability. Driver capability comes from DriverProfile
+    verification.
+    """
+
     role: UserRoleEnum
 
+
 class Token(BaseModel):
-    # Standard OAuth2 bearer token response shape.
     access_token: str
     token_type: str
 
+
 class TokenData(BaseModel):
-    # Decoded payload shape when reading claims out of a JWT.
     id: Optional[int] = None
 
 
-# ==========================================================
-# DRIVER TRAVEL PREFERENCES SCHEMA
-# ==========================================================
-# A single schema to handle viewing driver preferences Informally.
-# Used inside DriverProfileOut and Ride listings.
+# ===============================================================
+# DRIVER TRAVEL PREFERENCES
+# ===============================================================
 
 class DriverPreferencesResponse(BaseModel):
     """
-    Shows informational preferences. Frontend maps these enums to icons.
-    All fields optional as drivers aren't required to set them all.
+    Driver travel preferences.
     """
+
     chattiness: Optional[ChattinessEnum] = None
+
     music: Optional[MusicEnum] = None
+
     smoking: Optional[SmokingEnum] = None
+
     pets: Optional[PetsEnum] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
 
-# ==========================================================
-# PASSENGER / USER PROFILE SCHEMAS
-# ==========================================================
+# ===============================================================
+# USER PROFILE
+# ===============================================================
 
 class UserProfileUpdate(BaseModel):
     """
-    Payload for updating user profile fields directly.
-    Accepts text fields and requires photo_url.
+    Payload for updating common user profile information.
+
+    Profile photo is handled through the dedicated upload endpoint.
     """
+
     full_name: Optional[str] = None
+
     address: Optional[str] = None
+
     date_of_birth: Optional[date] = None
+
     gender: Optional[GenderEnum] = None
+
     phone_number: Optional[str] = None
+
     next_of_kin_name: Optional[str] = None
+
     next_of_kin_relationship: Optional[str] = None
+
     emergency_contact: Optional[str] = None
+
     blood_group: Optional[BloodGroupEnum] = None
+
     health_conditions: Optional[str] = None
+
     nin: Optional[str] = None
+
     photo_url: Optional[str] = Field(
-        default=None, 
-        json_schema_extra={"example": "https://example.com/photos/avatar.png"}
+        default=None,
+        json_schema_extra={
+            "example": "https://example.com/photos/avatar.png"
+        },
     )
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
 
 class UserProfileOut(BaseModel):
-    """What GET/PUT /profile/me return. Mirrors every relevant User column
-    so the frontend has everything it needs to render the profile screen."""
+    """
+    User profile returned to React.
+    """
+
     id: int
+
     email: Optional[str] = None
+
     phone_number: Optional[str] = None
+
     full_name: Optional[str] = None
+
     address: Optional[str] = None
+
     date_of_birth: Optional[date] = None
+
     gender: Optional[GenderEnum] = None
+
     next_of_kin_name: Optional[str] = None
+
     next_of_kin_relationship: Optional[str] = None
+
     emergency_contact: Optional[str] = None
+
     blood_group: Optional[BloodGroupEnum] = None
+
     health_conditions: Optional[str] = None
+
     nin: Optional[str] = None
+
     photo_url: Optional[str] = None
+
     nin_verification_status: VerificationStatusEnum
-    
+
     role: UserRoleEnum
+
     profile_complete: bool
+
+    # -----------------------------------------------------------
+    # Capability fields for React
+    # -----------------------------------------------------------
+
+    is_passenger: bool
+
+    is_driver: bool
+
+    has_driver_application: bool
+
+    driver_application_status: Optional[
+        VerificationStatusEnum
+    ] = None
+
+    can_book_rides: bool
+
+    can_offer_rides: bool
+
     created_at: datetime
+
     updated_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)  # lets FastAPI build this straight from the User ORM object
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
 
-# ==========================================================
-# DRIVER PROFILE SCHEMAS
-# ==========================================================
+# ===============================================================
+# DRIVER PROFILE
+# ===============================================================
 
 class DriverProfileUpdate(BaseModel):
-    """Payload for PUT /profile/driver. Licence photo is handled
-    separately via POST /profile/driver/license-photo since it's a
-    file, not JSON."""
-    license_number: Optional[str] = None  # locked after first submission — enforced in the route.
+    """
+    Driver-specific information.
+
+    Licence photo is uploaded separately.
+    """
+
+    license_number: Optional[str] = None
+
     license_expiry_date: Optional[date] = None
+
     about_me: Optional[str] = None
 
-    # ---- Driver Selects Travel Preferences ----
     chattiness: Optional[ChattinessEnum] = None
+
     music: Optional[MusicEnum] = None
+
     smoking: Optional[SmokingEnum] = None
+
     pets: Optional[PetsEnum] = None
 
+
 class DriverProfileOut(BaseModel):
-    """What GET/PUT /profile/driver and the licence-photo upload return."""
+    """
+    Driver profile returned to the frontend.
+    """
+
     id: int
+
     user_id: int
+
     license_number: Optional[str] = None
+
     license_photo_url: Optional[str] = None
+
     license_expiry_date: Optional[date] = None
+
     about_me: Optional[str] = None
 
-    # ---- Display Preferences to Front End ----
-    # Shows the description strings defined in app/models.py enums.
     chattiness: Optional[str] = None
+
     music: Optional[str] = None
+
     smoking: Optional[str] = None
+
     pets: Optional[str] = None
 
-    # Forwarded from User model through DriverProfile relationships/properties
     gender: Optional[GenderEnum] = None
 
     license_verification_status: VerificationStatusEnum
+
     license_verification_notes: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
 
-# ==========================================================
-# ADMIN SCHEMAS
-# ==========================================================
+# ===============================================================
+# ADMIN
+# ===============================================================
 
 class AdminRejection(BaseModel):
-    """Payload for the admin reject endpoints (NIN or licence).
-    `reason` is optional but strongly recommended — it's what gets
-    shown back to the user via nin_verification_notes / license_verification_notes."""
+    """
+    Payload for admin rejection endpoints.
+    """
+
     reason: Optional[str] = None
