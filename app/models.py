@@ -398,10 +398,20 @@ class User(Base):
     @property
     def can_offer_rides(self) -> bool:
         """
-        Only an approved/verified driver can offer rides.
+        CHANGED: previously this only checked licence
+        verification. Per business rule, publishing a ride
+        requires the FULL set: complete profile, verified
+        NIN, AND a verified driving licence.
+
+        can_book_rides already covers "profile complete +
+        NIN verified", so this just adds "and is_driver"
+        (licence verified) on top of it.
         """
 
-        return self.is_driver
+        return (
+            self.can_book_rides
+            and self.is_driver
+        )
 
 
 # ---------------------------------------------------------------

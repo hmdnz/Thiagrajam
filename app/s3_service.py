@@ -185,6 +185,66 @@ def upload_driver_license_image(
 
 
 # ============================================================
+# UPLOAD CAR PHOTO
+# ============================================================
+
+def upload_car_photo(
+    *,
+    file_content: bytes,
+    content_type: str,
+    car_id: int,
+) -> str:
+    """
+    Uploads a photo of a car.
+
+    S3 path:
+
+        cars/{car_id}/photos/{filename}
+
+    A car can have several photos, so unlike profile/licence
+    uploads this is called once per photo rather than once
+    per user — each call gets its own filename and doesn't
+    overwrite the last one.
+    """
+
+    validate_image(
+        file_content=file_content,
+        content_type=content_type,
+    )
+
+    extension = ALLOWED_IMAGE_TYPES[
+        content_type
+    ]
+
+    filename = (
+        f"{uuid.uuid4().hex}"
+        f"{extension}"
+    )
+
+    s3_key = (
+        f"cars/{car_id}/photos/{filename}"
+    )
+
+    try:
+
+        s3_client.put_object(
+            Bucket=settings.AWS_S3_BUCKET,
+            Key=s3_key,
+            Body=file_content,
+            ContentType=content_type,
+        )
+
+    except ClientError as error:
+
+        raise RuntimeError(
+            f"Failed to upload car photo to S3: {error}"
+        )
+
+    return s3_key
+
+
+
+# ============================================================
 # DELETE FILE FROM S3
 # ============================================================
 

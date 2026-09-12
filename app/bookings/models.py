@@ -1,18 +1,19 @@
+"""
+app/bookings/models.py
+"""
+
 from sqlalchemy import (
     Column,
     Integer,
-    String,
+    Date,
     ForeignKey,
     TIMESTAMP,
     Enum,
-    Float,
+    Numeric,
     text,
 )
-
 from sqlalchemy.orm import relationship
-
 from app.database import Base
-
 import enum
 
 
@@ -42,27 +43,23 @@ class Booking(Base):
         index=True,
     )
 
-    car_id = Column(
+    # CHANGED: was car_id. A booking is now against a
+    # published Ride, not a bare Car — the ride carries the
+    # route, price, and capacity that used to be missing.
+    ride_id = Column(
         Integer,
         ForeignKey(
-            "cars.id",
+            "rides.id",
             ondelete="CASCADE",
         ),
         nullable=False,
+        index=True,
     )
 
-    pickup_location = Column(
-        String,
-        nullable=False,
-    )
-
-    destination = Column(
-        String,
-        nullable=False,
-    )
-
-    fare = Column(
-        Float,
+    # Which occurrence of the ride (matters for recurring
+    # rides — a passenger books one specific date).
+    ride_date = Column(
+        Date,
         nullable=False,
     )
 
@@ -70,6 +67,15 @@ class Booking(Base):
         Integer,
         nullable=False,
         default=1,
+    )
+
+    # CHANGED: snapshotted from ride.price_per_seat at
+    # booking time, server-side — never taken from the
+    # passenger's request. This is what actually got charged,
+    # even if the driver changes the ride's price later.
+    fare = Column(
+        Numeric(10, 2),
+        nullable=False,
     )
 
     status = Column(
@@ -86,4 +92,4 @@ class Booking(Base):
 
     passenger = relationship("User")
 
-    car = relationship("Car")
+    ride = relationship("Ride")
