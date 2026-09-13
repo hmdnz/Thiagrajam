@@ -64,8 +64,7 @@ def _create_single_ride(
 ) -> ride_models.Ride:
     """
     Creates one Ride plus its stopovers and occurrences.
-    Does NOT commit — caller commits once, so a ride and its
-    return ride either both save or neither does.
+    Does NOT commit — caller commits.
     """
 
     new_ride = ride_models.Ride(
@@ -88,7 +87,7 @@ def _create_single_ride(
     db.add(new_ride)
     db.flush()  # assigns new_ride.id without committing yet
 
-    for index, stopover in enumerate(payload.stopovers):
+    for index, stopover in enumerate(payload.stopovers or []):
         db.add(
             ride_models.RideStopover(
                 ride_id=new_ride.id,
@@ -128,13 +127,8 @@ def publish_ride(
     ),
 ):
     """
-    Publishes a ride. Requires the full eligibility chain:
-    complete profile, verified NIN, verified licence — see
-    User.can_offer_rides in models.py.
-
-    If payload.return_ride is set, a second ride is created
-    in the same transaction with pickup/dropoff swapped, and
-    the two are linked via return_ride_id (both ways).
+    Publishes a single ride. Requires the full eligibility
+    chain: complete profile, verified NIN, verified licence.
     """
 
     if not current_user.can_offer_rides:
@@ -162,47 +156,19 @@ def publish_ride(
             detail="Car not found or does not belong to you.",
         )
 
-    outbound_ride = _create_single_ride(
-        payload=payload,
-        driver_id=current_user.id,
-        db=db,
-    )
-
-    if payload.return_ride is not None:
-
-        return_payload = payload.return_ride
-
-        # Swap pickup/dropoff automatically if the caller
-        # left them the same as the outbound leg — a return
-        # ride is defined by going the other way.
-        if (
-            return_payload.pickup_location
-            == payload.pickup_location
-        ):
-            return_payload = return_payload.model_copy(
-                update={
-                    "pickup_location": payload.dropoff_location,
-                    "pickup_lat": payload.dropoff_lat,
-                    "pickup_lng": payload.dropoff_lng,
-                    "dropoff_location": payload.pickup_location,
-                    "dropoff_lat": payload.pickup_lat,
-                    "dropoff_lng": payload.pickup_lng,
-                }
-            )
-
-        return_ride = _create_single_ride(
-            payload=return_payload,
+    try:
+        new_ride = _create_single_ride(
+            payload=payload,
             driver_id=current_user.id,
             db=db,
         )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
-        outbound_ride.return_ride_id = return_ride.id
-        return_ride.return_ride_id = outbound_ride.id
-
-    db.commit()
-    db.refresh(outbound_ride)
-
-    return outbound_ride
+    db.refresh(new_ride)
+    return new_ride
 
 
 # ============================================================
@@ -210,8 +176,7 @@ def publish_ride(
 # GET /rides/search
 #
 # Every filter is optional. Calling this with NO params at all
-# returns every upcoming active ride — this is what covers the
-# frontend's "just fetch rides" need, not a separate endpoint.
+# returns every upcoming active ride.
 # ============================================================
 
 @router.get(
@@ -248,17 +213,6 @@ def search_rides(
     """
     GET /rides/search
         -> every upcoming active ride, unfiltered
-
-    GET /rides/search?from=Lagos&to=Ibadan&departure_date=2026-09-20&passengers=2
-        -> the original passenger search behaviour
-
-    GET /rides/search?has_wifi=true&has_air_conditioning=true&sort_by=price
-        -> car-type/amenity filtering with sorting
-
-    departure_date is optional: if omitted, every occurrence
-    from today onward is considered, one result row per
-    matching occurrence date — so a recurring ride with 3
-    upcoming dates appears 3 times, once per bookable date.
     """
 
     query = (
@@ -289,8 +243,6 @@ def search_rides(
             ride_models.RideOccurrence.date == departure_date
         )
     else:
-        # No specific date given — only show rides that haven't
-        # already happened.
         query = query.filter(
             ride_models.RideOccurrence.date >= date_type.today()
         )
@@ -405,15 +357,6 @@ def get_my_rides(
 ):
     """
     Lets a driver search/filter their own published rides.
-
-    GET /rides/my-rides
-        -> everything the driver has ever published
-
-    GET /rides/my-rides?pickup_location=Lagos&is_active=true
-        -> just their active Lagos-departing rides
-
-    GET /rides/my-rides?date_from=2026-09-20&date_to=2026-09-30
-        -> rides with at least one occurrence in that window
     """
 
     query = (
@@ -447,8 +390,6 @@ def get_my_rides(
                 ride_models.RideOccurrence.date <= date_to
             )
 
-        # A recurring ride can match more than one occurrence
-        # inside the date window — collapse back to one row.
         query = query.distinct()
 
     return query.order_by(
@@ -474,8 +415,7 @@ def get_all_rides(
     ),
 ):
     """
-    Admin-only: returns every ride in the system, optionally
-    filtered by driver_id and/or is_active.
+    Admin-only: returns every ride in the system.
     """
 
     if not current_user.is_admin:
@@ -502,9 +442,7 @@ def get_all_rides(
 # GET /rides/{ride_id}
 #
 # MUST stay below every fixed-path route above (/search,
-# /my-rides, /all) — a path-parameter route registered earlier
-# would swallow those requests first, since FastAPI matches
-# routes in the order they're declared.
+# /my-rides, /all).
 # ============================================================
 
 @router.get(
@@ -516,9 +454,7 @@ def get_ride_by_id(
     db: Session = Depends(get_db),
 ):
     """
-    Fetches full details for one ride — route, times, capacity,
-    car, stopovers, and every occurrence date. Used by the
-    frontend's ride-detail screen before a passenger books.
+    Fetches full details for one ride.
     """
 
     ride = (

@@ -24,7 +24,6 @@ class StopoverOut(StopoverIn):
 class OccurrenceOut(BaseModel):
     id: int
     date: date
-    seats_remaining: int  # computed, not a DB column — see router
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -94,10 +93,6 @@ class RideCreate(BaseModel):
 
     price_per_seat: Decimal = Field(..., gt=0)
 
-    # If provided, a linked return ride is created in the
-    # same request, with locations swapped automatically.
-    return_ride: Optional["RideCreate"] = None
-
     @model_validator(mode="after")
     def validate_dates(self):
         if len(set(self.dates)) != len(self.dates):
@@ -123,7 +118,6 @@ class RideOut(BaseModel):
     max_back_seat_passengers: Optional[int] = None
     instant_booking: bool
     price_per_seat: Decimal
-    return_ride_id: Optional[int] = None
     is_active: bool
     created_at: datetime
     stopovers: List[StopoverOut] = []

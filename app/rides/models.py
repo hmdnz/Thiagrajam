@@ -136,20 +136,6 @@ class Ride(Base):
     )
 
     # ------------------------------------------------------
-    # RETURN RIDE
-    # Self-referential — links a ride to its return leg.
-    # ------------------------------------------------------
-
-    return_ride_id = Column(
-        Integer,
-        ForeignKey(
-            "rides.id",
-            ondelete="SET NULL",
-        ),
-        nullable=True,
-    )
-
-    # ------------------------------------------------------
     # STATUS
     # ------------------------------------------------------
 
@@ -184,11 +170,6 @@ class Ride(Base):
         "RideOccurrence",
         back_populates="ride",
         cascade="all, delete-orphan",
-    )
-
-    return_ride = relationship(
-        "Ride",
-        remote_side=[id],
     )
 
 
