@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
-from datetime import date as date_type
+from datetime import date as date_type, time as time_type
+from decimal import Decimal
 
 from app import models, oauth2
 from app.database import get_db
@@ -30,8 +31,7 @@ def _seats_remaining(
     """
     max_passengers minus the sum of seats_booked for this
     ride on this specific date, counting only bookings that
-    are still pending or confirmed (cancelled bookings free
-    the seat back up).
+    are still pending or confirmed.
     """
 
     booked = (
@@ -206,8 +206,12 @@ def publish_ride(
 
 
 # ============================================================
-# SEARCH RIDES
+# SEARCH / FETCH RIDES  (public — no login required)
 # GET /rides/search
+#
+# Every filter is optional. Calling this with NO params at all
+# returns every upcoming active ride — this is what covers the
+# frontend's "just fetch rides" need, not a separate endpoint.
 # ============================================================
 
 @router.get(
@@ -215,52 +219,153 @@ def publish_ride(
     response_model=List[ride_schemas.RideSearchResult],
 )
 def search_rides(
-    from_location: str = Query(..., alias="from"),
-    to_location: str = Query(..., alias="to"),
-    departure_date: date_type = Query(
-        default_factory=date_type.today
-    ),
+    from_location: Optional[str] = Query(default=None, alias="from"),
+    to_location: Optional[str] = Query(default=None, alias="to"),
+    departure_date: Optional[date_type] = Query(default=None),
     passengers: int = Query(default=1, ge=1),
+
+    # Pick-up time window, e.g. 06:00-12:00 / 12:01-18:00 / after 18:00
+    pickup_time_from: Optional[time_type] = Query(default=None),
+    pickup_time_to: Optional[time_type] = Query(default=None),
+
+    # Car type / amenities
+    car_make: Optional[str] = Query(default=None),
+    instant_booking: Optional[bool] = Query(default=None),
+    has_wifi: Optional[bool] = Query(default=None),
+    has_air_conditioning: Optional[bool] = Query(default=None),
+    has_power_outlets: Optional[bool] = Query(default=None),
+    smoking_allowed: Optional[bool] = Query(default=None),
+    pets_allowed: Optional[bool] = Query(default=None),
+    wheelchair_accessible: Optional[bool] = Query(default=None),
+
+    max_price: Optional[Decimal] = Query(default=None),
+
+    # "price" = cheapest first, "departure" = earliest first
+    sort_by: Optional[str] = Query(default=None),
+
     db: Session = Depends(get_db),
 ):
     """
-    GET /rides/search?from=Birmingham&to=London&departure_date=2026-09-20&passengers=2
+    GET /rides/search
+        -> every upcoming active ride, unfiltered
 
-    departure_date defaults to today, matching "Departure:
-    Today" being the default in the search form. Only rides
-    with an occurrence on that exact date, with enough
-    remaining seats, are returned.
+    GET /rides/search?from=Lagos&to=Ibadan&departure_date=2026-09-20&passengers=2
+        -> the original passenger search behaviour
 
-    Location matching is a simple case-insensitive substring
-    match for now — swap for a proper geo/places match once
-    pickup_lat/pickup_lng are reliably populated from the
-    frontend's Google Places integration.
+    GET /rides/search?has_wifi=true&has_air_conditioning=true&sort_by=price
+        -> car-type/amenity filtering with sorting
+
+    departure_date is optional: if omitted, every occurrence
+    from today onward is considered, one result row per
+    matching occurrence date — so a recurring ride with 3
+    upcoming dates appears 3 times, once per bookable date.
     """
 
-    candidate_rides = (
-        db.query(ride_models.Ride)
-        .join(ride_models.RideOccurrence)
-        .filter(
-            ride_models.Ride.is_active.is_(True),
-            ride_models.Ride.pickup_location.ilike(
-                f"%{from_location}%"
-            ),
-            ride_models.Ride.dropoff_location.ilike(
-                f"%{to_location}%"
-            ),
-            ride_models.RideOccurrence.date == departure_date,
+    query = (
+        db.query(ride_models.Ride, ride_models.RideOccurrence.date)
+        .join(
+            ride_models.RideOccurrence,
+            ride_models.RideOccurrence.ride_id == ride_models.Ride.id,
         )
-        .all()
+        .join(
+            car_models.Car,
+            car_models.Car.id == ride_models.Ride.car_id,
+        )
+        .filter(ride_models.Ride.is_active.is_(True))
     )
+
+    if from_location:
+        query = query.filter(
+            ride_models.Ride.pickup_location.ilike(f"%{from_location}%")
+        )
+
+    if to_location:
+        query = query.filter(
+            ride_models.Ride.dropoff_location.ilike(f"%{to_location}%")
+        )
+
+    if departure_date:
+        query = query.filter(
+            ride_models.RideOccurrence.date == departure_date
+        )
+    else:
+        # No specific date given — only show rides that haven't
+        # already happened.
+        query = query.filter(
+            ride_models.RideOccurrence.date >= date_type.today()
+        )
+
+    if pickup_time_from:
+        query = query.filter(
+            ride_models.Ride.pickup_time >= pickup_time_from
+        )
+
+    if pickup_time_to:
+        query = query.filter(
+            ride_models.Ride.pickup_time <= pickup_time_to
+        )
+
+    if car_make:
+        query = query.filter(
+            car_models.Car.make.ilike(f"%{car_make}%")
+        )
+
+    if instant_booking is not None:
+        query = query.filter(
+            ride_models.Ride.instant_booking == instant_booking
+        )
+
+    if has_wifi is not None:
+        query = query.filter(car_models.Car.has_wifi == has_wifi)
+
+    if has_air_conditioning is not None:
+        query = query.filter(
+            car_models.Car.has_air_conditioning == has_air_conditioning
+        )
+
+    if has_power_outlets is not None:
+        query = query.filter(
+            car_models.Car.has_power_outlets == has_power_outlets
+        )
+
+    if smoking_allowed is not None:
+        query = query.filter(
+            car_models.Car.smoking_allowed == smoking_allowed
+        )
+
+    if pets_allowed is not None:
+        query = query.filter(
+            car_models.Car.pets_allowed == pets_allowed
+        )
+
+    if wheelchair_accessible is not None:
+        query = query.filter(
+            car_models.Car.wheelchair_accessible == wheelchair_accessible
+        )
+
+    if max_price is not None:
+        query = query.filter(
+            ride_models.Ride.price_per_seat <= max_price
+        )
+
+    if sort_by == "price":
+        query = query.order_by(ride_models.Ride.price_per_seat.asc())
+    elif sort_by == "departure":
+        query = query.order_by(
+            ride_models.RideOccurrence.date.asc(),
+            ride_models.Ride.pickup_time.asc(),
+        )
+
+    candidate_rows = query.all()  # list of (Ride, occurrence_date) tuples
 
     results = []
 
-    for ride in candidate_rides:
+    for ride, occurrence_date in candidate_rows:
 
         remaining = _seats_remaining(
             db=db,
             ride_id=ride.id,
-            occurrence_date=departure_date,
+            occurrence_date=occurrence_date,
             max_passengers=ride.max_passengers,
         )
 
@@ -269,7 +374,7 @@ def search_rides(
 
         result = ride_schemas.RideSearchResult(
             **ride_schemas.RideOut.model_validate(ride).model_dump(),
-            searched_date=departure_date,
+            searched_date=occurrence_date,
             seats_remaining_for_date=remaining,
         )
 
@@ -279,7 +384,7 @@ def search_rides(
 
 
 # ============================================================
-# MY PUBLISHED RIDES
+# MY PUBLISHED RIDES (driver search over their own rides)
 # GET /rides/my-rides
 # ============================================================
 
@@ -288,13 +393,147 @@ def search_rides(
     response_model=List[ride_schemas.RideOut],
 )
 def get_my_rides(
+    pickup_location: Optional[str] = None,
+    dropoff_location: Optional[str] = None,
+    date_from: Optional[date_type] = None,
+    date_to: Optional[date_type] = None,
+    is_active: Optional[bool] = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(
         oauth2.get_current_user
     ),
 ):
-    return (
+    """
+    Lets a driver search/filter their own published rides.
+
+    GET /rides/my-rides
+        -> everything the driver has ever published
+
+    GET /rides/my-rides?pickup_location=Lagos&is_active=true
+        -> just their active Lagos-departing rides
+
+    GET /rides/my-rides?date_from=2026-09-20&date_to=2026-09-30
+        -> rides with at least one occurrence in that window
+    """
+
+    query = (
         db.query(ride_models.Ride)
         .filter(ride_models.Ride.driver_id == current_user.id)
-        .all()
     )
+
+    if pickup_location:
+        query = query.filter(
+            ride_models.Ride.pickup_location.ilike(f"%{pickup_location}%")
+        )
+
+    if dropoff_location:
+        query = query.filter(
+            ride_models.Ride.dropoff_location.ilike(f"%{dropoff_location}%")
+        )
+
+    if is_active is not None:
+        query = query.filter(ride_models.Ride.is_active == is_active)
+
+    if date_from or date_to:
+        query = query.join(ride_models.RideOccurrence)
+
+        if date_from:
+            query = query.filter(
+                ride_models.RideOccurrence.date >= date_from
+            )
+
+        if date_to:
+            query = query.filter(
+                ride_models.RideOccurrence.date <= date_to
+            )
+
+        # A recurring ride can match more than one occurrence
+        # inside the date window — collapse back to one row.
+        query = query.distinct()
+
+    return query.order_by(
+        ride_models.Ride.created_at.desc()
+    ).all()
+
+
+# ============================================================
+# ADMIN: ALL RIDES
+# GET /rides/all
+# ============================================================
+
+@router.get(
+    "/all",
+    response_model=List[ride_schemas.RideOut],
+)
+def get_all_rides(
+    driver_id: Optional[int] = None,
+    is_active: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(
+        oauth2.get_current_user
+    ),
+):
+    """
+    Admin-only: returns every ride in the system, optionally
+    filtered by driver_id and/or is_active.
+    """
+
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+
+    query = db.query(ride_models.Ride)
+
+    if driver_id is not None:
+        query = query.filter(ride_models.Ride.driver_id == driver_id)
+
+    if is_active is not None:
+        query = query.filter(ride_models.Ride.is_active == is_active)
+
+    return query.order_by(
+        ride_models.Ride.created_at.desc()
+    ).all()
+
+
+# ============================================================
+# GET SINGLE RIDE  (public — no login required)
+# GET /rides/{ride_id}
+#
+# MUST stay below every fixed-path route above (/search,
+# /my-rides, /all) — a path-parameter route registered earlier
+# would swallow those requests first, since FastAPI matches
+# routes in the order they're declared.
+# ============================================================
+
+@router.get(
+    "/{ride_id}",
+    response_model=ride_schemas.RideOut,
+)
+def get_ride_by_id(
+    ride_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Fetches full details for one ride — route, times, capacity,
+    car, stopovers, and every occurrence date. Used by the
+    frontend's ride-detail screen before a passenger books.
+    """
+
+    ride = (
+        db.query(ride_models.Ride)
+        .filter(
+            ride_models.Ride.id == ride_id,
+            ride_models.Ride.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if not ride:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ride not found.",
+        )
+
+    return ride

@@ -9,7 +9,7 @@ from fastapi import (
     status,
 )
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from app import models, oauth2
 from app.database import get_db
@@ -24,6 +24,55 @@ router = APIRouter(
     prefix="/bookings",
     tags=["Bookings"],
 )
+
+
+# ============================================================
+# ADMIN: ALL BOOKINGS
+# GET /bookings/all
+# ============================================================
+
+@router.get(
+    "/all",
+    response_model=List[booking_schemas.BookingOut],
+)
+def get_all_bookings(
+    status_filter: Optional[booking_models.BookingStatusEnum] = None,
+    ride_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(
+        oauth2.get_current_user
+    ),
+):
+    """
+    Admin-only: returns every booking in the system, optionally
+    filtered by status and/or ride_id.
+
+    GET /bookings/all
+    GET /bookings/all?status_filter=pending
+    GET /bookings/all?ride_id=7
+    """
+
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+
+    query = db.query(booking_models.Booking)
+
+    if status_filter is not None:
+        query = query.filter(
+            booking_models.Booking.status == status_filter
+        )
+
+    if ride_id is not None:
+        query = query.filter(
+            booking_models.Booking.ride_id == ride_id
+        )
+
+    return query.order_by(
+        booking_models.Booking.created_at.desc()
+    ).all()
 
 
 # ============================================================

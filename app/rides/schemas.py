@@ -29,6 +29,28 @@ class OccurrenceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CarSummaryOut(BaseModel):
+    """
+    Enough car info for a passenger to judge a ride by vehicle
+    type/amenities without a separate /cars/ call.
+    """
+
+    id: int
+    make: str
+    model: str
+    year: int
+    color: str
+    is_tinted: bool
+    has_wifi: bool
+    has_air_conditioning: bool
+    has_power_outlets: bool
+    smoking_allowed: bool
+    pets_allowed: bool
+    wheelchair_accessible: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class RideCreate(BaseModel):
     """
     Payload for POST /rides/.
@@ -106,6 +128,7 @@ class RideOut(BaseModel):
     created_at: datetime
     stopovers: List[StopoverOut] = []
     occurrences: List[OccurrenceOut] = []
+    car: CarSummaryOut
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -113,8 +136,8 @@ class RideOut(BaseModel):
 class RideSearchResult(RideOut):
     """
     Same shape as RideOut, but seats_remaining is scoped to
-    the ONE searched date, not every occurrence — that's the
-    number a passenger searching "today" actually cares about.
+    the ONE searched/matched date, not every occurrence —
+    that's the number relevant to a specific search result row.
     """
 
     searched_date: date
