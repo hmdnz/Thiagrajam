@@ -939,11 +939,11 @@ class UserOut(BaseModel):
     # Capability fields
     # -----------------------------------------------------------
 
-    is_passenger: bool
+    is_passenger: bool=False
 
-    is_driver: bool
+    is_driver: bool=False
 
-    has_driver_application: bool
+    has_driver_application: bool=False
 
     driver_application_status: Optional[
         VerificationStatusEnum
