@@ -473,3 +473,5 @@ def get_ride_by_id(
         )
 
     return ride
+
+    

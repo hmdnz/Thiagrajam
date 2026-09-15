@@ -81,12 +81,11 @@ class RideCreate(BaseModel):
 
     max_passengers: int = Field(..., ge=1)
 
-    # None = no restriction; 0, 1, or 2 = the "max in the
-    # back" checkbox the driver ticks.
+    # None = no restriction; 0, 1, 2, or 3 = the "max in the back" seat constraint set by the driver
     max_back_seat_passengers: Optional[int] = Field(
         default=None,
         ge=0,
-        le=2,
+        le=3,
     )
 
     instant_booking: bool = False
@@ -94,11 +93,20 @@ class RideCreate(BaseModel):
     price_per_seat: Decimal = Field(..., gt=0)
 
     @model_validator(mode="after")
-    def validate_dates(self):
+    def validate_ride_constraints(self):
+        # Prevent duplicate dates in multi-day / recurring ride postings
         if len(set(self.dates)) != len(self.dates):
+            raise ValueError("Duplicate dates are not allowed.")
+
+        # Ensure max back seat passengers doesn't exceed total max passengers
+        if (
+            self.max_back_seat_passengers is not None
+            and self.max_back_seat_passengers > self.max_passengers
+        ):
             raise ValueError(
-                "Duplicate dates are not allowed."
+                "max_back_seat_passengers cannot be greater than max_passengers."
             )
+
         return self
 
 
