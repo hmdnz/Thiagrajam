@@ -2,26 +2,18 @@
 app/bookings/models.py
 """
 
-from sqlalchemy import (
-    Column,
-    Integer,
-    Date,
-    ForeignKey,
-    TIMESTAMP,
-    Enum,
-    Numeric,
-    text,
-)
-from sqlalchemy.orm import relationship
-from app.database import Base
 import enum
+from sqlalchemy import Column, Integer, Date, ForeignKey, Enum, TIMESTAMP, text
+from sqlalchemy.orm import relationship
+
+from app.database import Base
+from app.cars.models import Car
 
 
 class BookingStatusEnum(enum.Enum):
     pending = "pending"
     confirmed = "confirmed"
     cancelled = "cancelled"
-    completed = "completed"
 
 
 class Booking(Base):
@@ -33,51 +25,26 @@ class Booking(Base):
         index=True,
     )
 
-    passenger_id = Column(
-        Integer,
-        ForeignKey(
-            "users.id",
-            ondelete="CASCADE",
-        ),
-        nullable=False,
-        index=True,
-    )
-
-    # CHANGED: was car_id. A booking is now against a
-    # published Ride, not a bare Car — the ride carries the
-    # route, price, and capacity that used to be missing.
     ride_id = Column(
         Integer,
-        ForeignKey(
-            "rides.id",
-            ondelete="CASCADE",
-        ),
-        nullable=False,
-        index=True,
-    )
-
-    # Which occurrence of the ride (matters for recurring
-    # rides — a passenger books one specific date).
-    ride_date = Column(
-        Date,
+        ForeignKey("rides.id", ondelete="CASCADE"),
         nullable=False,
     )
 
-    seats_booked = Column(
+    passenger_id = Column(
         Integer,
-        nullable=False,
-        default=1,
-    )
-
-    # CHANGED: snapshotted from ride.price_per_seat at
-    # booking time, server-side — never taken from the
-    # passenger's request. This is what actually got charged,
-    # even if the driver changes the ride's price later.
-    fare = Column(
-        Numeric(10, 2),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
 
+    car_id = Column(
+        Integer,
+        ForeignKey("cars.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    travel_date = Column(Date, nullable=False)
+    seats_booked = Column(Integer, default=1, nullable=False)
     status = Column(
         Enum(BookingStatusEnum),
         default=BookingStatusEnum.pending,
@@ -90,6 +57,6 @@ class Booking(Base):
         server_default=text("now()"),
     )
 
-    passenger = relationship("User")
-
-    ride = relationship("Ride")
+    ride = relationship("Ride", back_populates="bookings")
+    passenger = relationship("User", back_populates="bookings")
+    car = relationship(Car)

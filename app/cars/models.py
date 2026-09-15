@@ -76,8 +76,6 @@ class Car(Base):
 
     # ------------------------------------------------------
     # AMENITIES
-    # Each is a simple boolean flag. Add more here later by
-    # following the same pattern — one Column per amenity.
     # ------------------------------------------------------
 
     is_tinted = Column(
@@ -132,7 +130,10 @@ class Car(Base):
     # RELATIONSHIPS
     # ------------------------------------------------------
 
-    driver = relationship("User")
+    owner = relationship(
+        "User",
+        back_populates="cars",
+    )
 
     photos = relationship(
         "CarPhoto",
@@ -140,12 +141,16 @@ class Car(Base):
         cascade="all, delete-orphan",
     )
 
+    rides = relationship(
+        "Ride",
+        back_populates="car",
+        cascade="all, delete-orphan",
+    )
+
 
 class CarPhoto(Base):
     """
-    A single photo of a car. A car can have several — this is
-    a separate table (rather than one photo_url column on Car)
-    so the number of photos isn't fixed.
+    A single photo of a car.
     """
 
     __tablename__ = "car_photos"
