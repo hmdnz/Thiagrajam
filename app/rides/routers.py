@@ -8,7 +8,7 @@ from sqlalchemy import func
 from typing import List, Optional
 from datetime import date as date_type, time as time_type
 from decimal import Decimal
-
+from datetime import date, datetime
 from app import models, oauth2
 from app.database import get_db
 from app.cars import models as car_models
@@ -25,7 +25,7 @@ router = APIRouter(
 def _seats_remaining(
     db: Session,
     ride_id: int,
-    occurrence_date: date_type,
+    occurrence_date: date,
     max_passengers: int,
 ) -> int:
     """
@@ -43,7 +43,7 @@ def _seats_remaining(
         )
         .filter(
             booking_models.Booking.ride_id == ride_id,
-            booking_models.Booking.ride_date == occurrence_date,
+            booking_models.Booking.travel_date == occurrence_date,
             booking_models.Booking.status.in_(
                 [
                     booking_models.BookingStatusEnum.pending,
