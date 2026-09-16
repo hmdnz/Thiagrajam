@@ -949,9 +949,8 @@ class UserOut(BaseModel):
         VerificationStatusEnum
     ] = None
 
-    can_book_rides: bool
-
-    can_offer_rides: bool
+    can_book_rides: Optional[bool] = False
+    can_offer_rides: Optional[bool] = False
 
     created_at: datetime
 

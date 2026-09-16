@@ -1518,6 +1518,74 @@ class PetsEnum(enum.Enum):
 # User Model
 # ---------------------------------------------------------------
 
+# class User(Base):
+#     __tablename__ = "users"
+
+#     id = Column(Integer, primary_key=True, index=True)
+#     email = Column(String, unique=True, nullable=True, index=True)
+#     phone_number = Column(String, unique=True, nullable=True, index=True)
+#     password = Column(String, nullable=False)
+
+#     nin_verified = Column(Boolean, server_default="false", nullable=False)
+#     is_active = Column(Boolean, server_default="true", nullable=False)
+#     is_admin = Column(Boolean, server_default="false", nullable=False)
+#     otp_verification_id = Column(String, nullable=True)
+
+#     full_name = Column(String, nullable=True)
+#     address = Column(String, nullable=True)
+#     date_of_birth = Column(Date, nullable=True)
+#     gender = Column(Enum(GenderEnum), nullable=True)
+
+#     next_of_kin_name = Column(String, nullable=True)
+#     next_of_kin_relationship = Column(String, nullable=True)
+#     emergency_contact = Column(String, nullable=True)
+
+#     blood_group = Column(Enum(BloodGroupEnum), nullable=True)
+#     health_conditions = Column(Text, nullable=True)
+
+#     nin = Column(String, unique=True, nullable=True)
+#     photo_url = Column(String, nullable=True)
+#     nin_verification_status = Column(
+#         Enum(VerificationStatusEnum),
+#         default=VerificationStatusEnum.unverified,
+#         server_default=VerificationStatusEnum.unverified.value,
+#         nullable=False,
+#     )
+#     nin_verified_at = Column(TIMESTAMP(timezone=True), nullable=True)
+#     nin_match_score = Column(Float, nullable=True)
+#     nin_verification_notes = Column(String, nullable=True)
+
+#     role = Column(Enum(UserRoleEnum), default=UserRoleEnum.passenger, nullable=False)
+#     profile_complete = Column(Boolean, server_default="false", nullable=False)
+
+#     created_at = Column(
+#         TIMESTAMP(timezone=True),
+#         nullable=False,
+#         server_default=text("now()"),
+#     )
+#     updated_at = Column(
+#         TIMESTAMP(timezone=True),
+#         nullable=False,
+#         server_default=text("now()"),
+#         onupdate=text("now()"),
+#     )
+
+#     # Relationships
+#     posts = relationship("Post", back_populates="owner")
+#     driver_profile = relationship(
+#         "DriverProfile",
+#         back_populates="user",
+#         uselist=False,
+#         cascade="all, delete-orphan",
+#     )
+#     cars = relationship(Car, back_populates="owner", cascade="all, delete-orphan")
+#     rides = relationship("Ride", back_populates="driver", cascade="all, delete-orphan")
+#     bookings = relationship(Booking, back_populates="passenger", cascade="all, delete-orphan")
+
+# ---------------------------------------------------------------
+# User Model
+# ---------------------------------------------------------------
+
 class User(Base):
     __tablename__ = "users"
 
@@ -1582,6 +1650,69 @@ class User(Base):
     rides = relationship("Ride", back_populates="driver", cascade="all, delete-orphan")
     bookings = relationship(Booking, back_populates="passenger", cascade="all, delete-orphan")
 
+    # -----------------------------------------------------------
+    # Profile Completion Helper Method
+    # -----------------------------------------------------------
+    def update_profile_complete(self) -> bool:
+        """
+        Evaluates whether required passenger profile fields are populated,
+        updates self.profile_complete accordingly, and returns the result.
+        """
+        required_fields = [
+            self.full_name,
+            self.address,
+            self.phone_number,
+            self.date_of_birth,
+            self.gender,
+            self.next_of_kin_name,
+            self.emergency_contact,
+            self.blood_group,
+            self.nin,
+            self.photo_url,
+        ]
+
+        self.profile_complete = all(
+            field is not None and str(field).strip() != ""
+            for field in required_fields
+        )
+
+        return self.profile_complete
+
+    # -----------------------------------------------------------
+    # Computed Properties for Response Schemas (UserProfileOut)
+    # -----------------------------------------------------------
+    @property
+    def is_passenger(self) -> bool:
+        return self.role == UserRoleEnum.passenger
+
+    @property
+    def is_driver(self) -> bool:
+        return self.role == UserRoleEnum.driver
+
+    @property
+    def has_driver_application(self) -> bool:
+        return self.driver_profile is not None
+
+    @property
+    def can_book_rides(self) -> bool:
+        """
+        A passenger can book rides if account is active and passenger profile is complete.
+        """
+        return self.is_active and self.profile_complete
+
+    @property
+    def can_offer_rides(self) -> bool:
+        """
+        A driver can offer rides if account is active, passenger profile is complete,
+        driver profile exists, and driving licence status is verified.
+        """
+        if not (self.is_active and self.profile_complete and self.driver_profile):
+            return False
+
+        return (
+            self.driver_profile.license_verification_status
+            == VerificationStatusEnum.verified
+        )
 
 # ---------------------------------------------------------------
 # Driver Profile
@@ -1631,6 +1762,24 @@ class DriverProfile(Base):
 
     user = relationship("User", back_populates="driver_profile")
 
+    # -----------------------------------------------------------
+    # Driver Profile Completion Helper Method
+    # -----------------------------------------------------------
+    def is_complete(self) -> bool:
+        """
+        Checks if required driver profile fields (licence number, 
+        licence photo, and expiry date) are populated.
+        """
+        required_fields = [
+            self.license_number,
+            self.license_photo_url,
+            self.license_expiry_date,
+        ]
+
+        return all(
+            field is not None and str(field).strip() != ""
+            for field in required_fields
+        )
 
 # ---------------------------------------------------------------
 # Misc Models
