@@ -85,7 +85,7 @@ def verify_db_connection():
 #     "https://www.wenyfour.com.ng",
 #     "https://app.wenyfour.com.ng",
 
-]
+# ]
 
 app.add_middleware(
     CORSMiddleware,
