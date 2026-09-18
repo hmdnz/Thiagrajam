@@ -76,19 +76,20 @@ def verify_db_connection():
 #     allow_headers=["*"],
 # )
 
-origins = [
-    "https://wenyfour.com",
-    "https://www.wenyfour.com",
-    "https://app.wenyfour.com",
-    "https://api.wenyfour.com",
-    "https://wenyfour.com.ng",
-    "https://www.wenyfour.com.ng",
-    "https://app.wenyfour.com.ng",
+# origins = [
+#     "https://wenyfour.com",
+#     "https://www.wenyfour.com",
+#     "https://app.wenyfour.com",
+#     "https://api.wenyfour.com",
+#     "https://wenyfour.com.ng",
+#     "https://www.wenyfour.com.ng",
+#     "https://app.wenyfour.com.ng",
+
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?|https://wenyfour-.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
