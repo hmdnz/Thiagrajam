@@ -49,32 +49,53 @@ def verify_db_connection():
 # Explicit allow-list of frontends permitted to call this API with
 # credentials. Using "*" would silently break allow_credentials=True.
 # origins = 
+# origins = [
+#     "https://wenyfour-neww.vercel.app",
+#     "https://wenyfour.com",
+#     "https://www.wenyfour.com",
+#     "https://app.wenyfour.com",       
+#     "https://api.wenyfour.com",       
+#     "https://wenyfour.com.ng",
+#     "https://www.wenyfour.com.ng",
+#     "https://app.wenyfour.com.ng",
+#     "https://api.wenyfour.com.ng",
+#     "http://localhost:3000",
+#     "http://localhost:5173",
+#     "http://localhost:8000",
+#     "http://13.247.98.20:8000",
+# ]
+
+# # Allow requests from ALL origins
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=origins,
+#     # Matches any Vercel preview deployments (e.g., wenyfour-git-branch-team.vercel.app)
+#     allow_origin_regex=r"https://wenyfour-.*\.vercel\.app",
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
 origins = [
-    "https://wenyfour-neww.vercel.app",
     "https://wenyfour.com",
     "https://www.wenyfour.com",
-    "https://app.wenyfour.com",       
-    "https://api.wenyfour.com",       
+    "https://app.wenyfour.com",
+    "https://api.wenyfour.com",
     "https://wenyfour.com.ng",
     "https://www.wenyfour.com.ng",
     "https://app.wenyfour.com.ng",
-    "https://api.wenyfour.com.ng",
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:8000",
-    "http://13.247.98.20:8000",
 ]
 
-# Allow requests from ALL origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    # Matches any Vercel preview deployments (e.g., wenyfour-git-branch-team.vercel.app)
-    allow_origin_regex=r"https://wenyfour-.*\.vercel\.app",
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?|https://wenyfour-.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
 
 # Serves uploaded selfies/licence photos at e.g. /static/uploads/selfies/<file>.
 os.makedirs("static/uploads", exist_ok=True)
