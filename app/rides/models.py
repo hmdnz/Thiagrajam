@@ -27,10 +27,9 @@ class Ride(Base):
 
     # --- Macro Journey (City Level) ---
     origin_city = Column(String, nullable=False, index=True)      # e.g., "Kano"
-    origin_state = Column(String, nullable=True)                  # e.g., "Kano"
     destination_city = Column(String, nullable=False, index=True) # e.g., "Abuja"
-    destination_state = Column(String, nullable=True)             # e.g., "FCT"
 
+   
 
     pickup_location = Column(String, nullable=False)
     pickup_lat = Column(Float, nullable=True)

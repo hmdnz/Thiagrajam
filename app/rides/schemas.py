@@ -256,9 +256,9 @@ class RideOut(BaseModel):
 
     # Macro Journey
     origin_city: str
-    origin_state: Optional[str] = None
+    
     destination_city: str
-    destination_state: Optional[str] = None
+    
 
     # Micro Meeting Points
     pickup_location: str
