@@ -56,7 +56,6 @@ def _seats_remaining(
 
     return max_passengers - int(booked)
 
-
 def _create_single_ride(
     payload: ride_schemas.RideCreate,
     driver_id: int,
@@ -70,6 +69,8 @@ def _create_single_ride(
     new_ride = ride_models.Ride(
         driver_id=driver_id,
         car_id=payload.car_id,
+        origin_city=payload.origin_city,
+        destination_city=payload.destination_city,
         pickup_location=payload.pickup_location,
         pickup_lat=payload.pickup_lat,
         pickup_lng=payload.pickup_lng,
@@ -85,29 +86,30 @@ def _create_single_ride(
     )
 
     db.add(new_ride)
-    db.flush()  # assigns new_ride.id without committing yet
+    db.flush()
 
-    for index, stopover in enumerate(payload.stopovers or []):
+    # Create stopovers
+    for stopover in payload.stopovers or []:
         db.add(
-            ride_models.RideStopover(
+            ride_models.Stopover(
                 ride_id=new_ride.id,
-                location=stopover.location,
+                location_name=stopover.location,
                 lat=stopover.lat,
                 lng=stopover.lng,
-                sequence=index,
             )
         )
 
+    # Create ride occurrences
     for ride_date in payload.dates:
         db.add(
             ride_models.RideOccurrence(
                 ride_id=new_ride.id,
                 date=ride_date,
+                seats_remaining=payload.max_passengers,
             )
         )
 
     return new_ride
-
 
 # ============================================================
 # PUBLISH RIDE

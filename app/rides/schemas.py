@@ -159,12 +159,16 @@ class StopoverIn(BaseModel):
     lng: Optional[float] = None
 
 
-class StopoverOut(StopoverIn):
+class StopoverOut(BaseModel):
     id: int
-    sequence: int
+    location: str = Field(validation_alias="location_name")
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
-    model_config = ConfigDict(from_attributes=True)
-
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+    )
 
 class OccurrenceOut(BaseModel):
     id: int
