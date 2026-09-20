@@ -647,7 +647,6 @@ def update_car(
 # DELETE /cars/{car_id}
 # ============================================================
 
-
 @router.delete(
     "/{car_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -663,14 +662,32 @@ def delete_car(
         db=db,
     )
 
+    # 1. Delete associated photos from S3 safely
     for photo in car.photos:
-        delete_file_from_s3(photo.photo_url)
+        try:
+            delete_file_from_s3(photo.photo_url)
+        except Exception as error:
+            # Log S3 failure without crashing the DB deletion process (or handle appropriately)
+            print(f"Failed to delete photo {photo.photo_url} from S3: {str(error)}")
 
-    db.delete(car)
-    db.commit()
+    # 2. Delete car from Database
+    try:
+        db.delete(car)
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete car because it is referenced by existing rides or bookings.",
+        )
+    except Exception as error:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete car from database: {str(error)}",
+        )
 
     return None
-
 
 # ============================================================
 # UPLOAD CAR PHOTO
