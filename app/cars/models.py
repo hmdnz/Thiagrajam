@@ -356,7 +356,7 @@ class CarPhoto(Base):
         Integer, ForeignKey("cars.id", ondelete="CASCADE"), nullable=False
     )
     photo_url = Column(String, nullable=False)
-    is_primary = Column(Boolean, default=False)
+
     created_at = Column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
     )

@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()   # <-- MUST be before any `from app...` import
+
 from pydantic import BaseModel, Field
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +18,7 @@ from app.admin import routers as admin_router
 from app.cars import routers as cars_router
 from app.bookings import routers as bookings_router
 from app.rides import routers as rides_router
+from app.payments import routers as payment_routers
 
 
 # Creates any tables that don't already exist yet. Does NOT apply schema
@@ -112,6 +116,7 @@ app.include_router(profile.router)
 app.include_router(bookings_router.router)
 app.include_router(rides_router.router)
 app.include_router(cars_router.router)
+app.include_router(payment_routers.router)
 app.include_router(admin_router.router)
 
 @app.get("/health", tags=["System"])

@@ -1204,7 +1204,7 @@ class DriverProfileUpdate(BaseModel):
 
     license_number: Optional[str] = None
 
-    license_expiry_date: Optional[date] = None
+    license_expiry: Optional[date] = None
 
     about_me: Optional[str] = None
 

@@ -444,9 +444,7 @@ async def add_car(
     smoking_allowed: bool = Form(False),
     pets_allowed: bool = Form(False),
     wheelchair_accessible: bool = Form(False),
-    is_primary: bool = Form(
-        True
-    ),  # <--- Added parameter for user selection
+    
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
@@ -516,7 +514,7 @@ async def add_car(
         new_photo = car_models.CarPhoto(
             car_id=new_car.id,
             photo_url=s3_key,
-            is_primary=is_primary,  # <--- Honors user parameter
+            
         )
         db.add(new_photo)
 
@@ -687,7 +685,6 @@ def delete_car(
 async def upload_car_photo_endpoint(
     car_id: int,
     file: UploadFile = File(...),
-    is_primary: bool = Form(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
 ):
@@ -722,14 +719,14 @@ async def upload_car_photo_endpoint(
             detail=str(error),
         )
 
-    if is_primary:
-        for existing_photo in car.photos:
-            existing_photo.is_primary = False
+    # if is_primary:
+    #     for existing_photo in car.photos:
+    #         existing_photo.is_primary = False
 
     new_photo = car_models.CarPhoto(
         car_id=car.id,
-        photo_url=photo_key,
-        is_primary=is_primary,
+       
+        photo_url=photo_key
     )
 
     db.add(new_photo)

@@ -150,7 +150,7 @@ from datetime import datetime
 class CarPhotoOut(BaseModel):
     id: int
     photo_url: str
-    is_primary: bool
+    
     created_at: datetime
 
     model_config = {
