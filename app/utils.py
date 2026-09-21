@@ -12,23 +12,61 @@ from .config import settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-def normalize_phone_number(
-    phone: str, default_country_code: str = "+234"
-) -> str:
-    """Normalizes local Nigerian numbers (080...) to E.164 (+23480...)."""
-    cleaned = re.sub(r"[\s\-\(\)]", "", phone.strip())
-    if cleaned.startswith("0") and len(cleaned) == 11:
-        return f"{default_country_code}{cleaned[1:]}"
-    if not cleaned.startswith("+"):
-        return f"+{cleaned}"
+# def normalize_phone_number(
+#     phone: str, default_country_code: str = "+234"
+# ) -> str:
+#     """Normalizes local Nigerian numbers (080...) to E.164 (+23480...)."""
+#     cleaned = re.sub(r"[\s\-\(\)]", "", phone.strip())
+#     if cleaned.startswith("0") and len(cleaned) == 11:
+#         return f"{default_country_code}{cleaned[1:]}"
+#     if not cleaned.startswith("+"):
+#         return f"+{cleaned}"
+#     return cleaned
+
+
+# def format_nigerian_phone_no_plus(phone: str) -> str:
+#     """Formats local Nigerian phone numbers to standard international
+#     format without '+' — this is the format Kudisms expects in `recipients`."""
+#     normalized = normalize_phone_number(phone)
+#     return normalized.lstrip("+")
+
+
+
+
+def normalize_phone_number(phone: str, country_code: str = "234") -> str:
+    """
+    Normalizes any Nigerian phone number format to a local 11-digit number (09036365622).
+    - '+2349036365622' -> '09036365622'
+    - '2349036365622'  -> '09036365622'
+    - '09036365622'    -> '09036365622'
+    - '9036365622'     -> '09036365622'
+    """
+    if not phone:
+        return phone
+
+    # Strip spaces, hyphens, and brackets
+    cleaned = re.sub(r"[\s\-\(\)\+]", "", phone.strip())
+
+    # If it starts with 234 and is 13 digits long, convert to 0...
+    if cleaned.startswith(country_code) and len(cleaned) == 13:
+        cleaned = "0" + cleaned[len(country_code):]
+
+    # If user entered 9036365622 (10 digits missing leading zero)
+    elif not cleaned.startswith("0") and len(cleaned) == 10:
+        cleaned = "0" + cleaned
+
     return cleaned
 
 
 def format_nigerian_phone_no_plus(phone: str) -> str:
-    """Formats local Nigerian phone numbers to standard international
-    format without '+' — this is the format Kudisms expects in `recipients`."""
-    normalized = normalize_phone_number(phone)
-    return normalized.lstrip("+")
+    """
+    Converts a local or international phone number to international format
+    without '+' specifically for KudiSMS (e.g. '09036365622' -> '2349036365622').
+    """
+    local_phone = normalize_phone_number(phone)
+    if local_phone.startswith("0") and len(local_phone) == 11:
+        return f"234{local_phone[1:]}"
+    return local_phone
 
 
 def hash(password: str) -> str:

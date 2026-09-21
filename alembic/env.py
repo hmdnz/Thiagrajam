@@ -27,6 +27,24 @@ if config.config_file_name is not None:
 # SQLAlchemy metadata used by Alembic autogenerate
 target_metadata = Base.metadata
 
+# List of WIP/unmapped tables to ignore during autogenerate
+IGNORED_TABLES = {
+    "transactions",
+    "payouts",
+    "payments",
+    "admins",
+    "statements",
+    "admin_logs",
+    "wallets",
+    "refunds",
+}
+
+def include_object(object, name, type_, reflected, compare_to):
+    """Filter out tables from autogenerate checks if they are in IGNORED_TABLES."""
+    if type_ == "table" and name in IGNORED_TABLES:
+        return False
+    return True
+
 
 def run_migrations_offline() -> None:
     """Run migrations in offline mode."""
@@ -38,6 +56,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,  # <--- Added here
     )
 
     with context.begin_transaction():
@@ -57,6 +76,7 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
+            include_object=include_object,  # <--- Added here
         )
 
         with context.begin_transaction():
@@ -67,4 +87,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-
