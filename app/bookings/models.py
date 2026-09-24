@@ -22,18 +22,13 @@ class BookingStatusEnum(enum.Enum):
 class Booking(Base):
     __tablename__ = "bookings"
 
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True,
-    )
-
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # MUST BE INTEGER (to match rides.id):
     ride_id = Column(Integer, ForeignKey("rides.id", ondelete="CASCADE"), nullable=False)
-
-    passenger_id = Column(UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-    )
+    
+    # MUST BE UUID (to match users.id):
+    passenger_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     car_id = Column(
         Integer,
