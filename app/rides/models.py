@@ -2,13 +2,23 @@
 app/rides/models.py
 """
 
-from sqlalchemy import Column, Integer, String,Float, Boolean, 
-ForeignKey, TIMESTAMP, Time, Numeric, Date, Float, text, DateTime
+# app/rides/models.py
+
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Float,
+    Boolean,
+    Numeric,
+    Time,
+    DateTime,
+    ForeignKey,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.database import Base
-
 
 class Ride(Base):
     __tablename__ = "rides"
@@ -20,7 +30,7 @@ class Ride(Base):
     destination_city = Column(String, nullable=False)
     pickup_location = Column(String, nullable=False)
     pickup_lat = Column(Float)
-    pickup_lng = Float
+    pickup_lng = Column(Float)
     dropoff_location = Column(String, nullable=False)
     dropoff_lat = Column(Float)
     dropoff_lng = Column(Float)
@@ -32,7 +42,7 @@ class Ride(Base):
     price_per_seat = Column(Numeric(10, 2), nullable=False)
     is_active = Column(Boolean, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     # FIX THIS LINE: Ensure closing parenthesis ')' is present
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     # Relationships
