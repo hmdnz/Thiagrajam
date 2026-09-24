@@ -2,7 +2,8 @@
 app/rides/models.py
 """
 
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, TIMESTAMP, Time, Numeric, Date, Float, text
+from sqlalchemy import Column, Integer, String,Float, Boolean, 
+ForeignKey, TIMESTAMP, Time, Numeric, Date, Float, text, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
