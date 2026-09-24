@@ -1,10 +1,11 @@
-from datetime import datetime, timedelta, timezone
+from uuid import UUID
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
-from app import database, models
+from app import database, models,schemas
 from app.config import settings
 from app.admin import models as admin_models
 
@@ -38,8 +39,15 @@ admin_oauth2_scheme = OAuth2PasswordBearer(
 def create_access_token(data: dict):
     """Generates JWT token for both Users (user_id) and Admins (admin_id)."""
     to_encode = data.copy()
+
+    # Convert UUIDs or non-serializable objects in the payload to strings
+    for key, value in to_encode.items():
+        if isinstance(value, UUID):
+            to_encode[key] = str(value)
+
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
+
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
@@ -97,20 +105,44 @@ def verify_email_verification_token(token: str, credentials_exception):
 # 3. User Dependencies (Passengers & Drivers)
 # -----------------------------------------------------------------------------
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(database.get_db),
-):
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(database.get_db)
+) -> models.User:
+    """Decodes access token, validates UUID payload, and fetches active user."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    user_id = verify_access_token(token, credentials_exception)
+
+    try:
+        # Decode the JWT token
+        payload = jwt.decode(
+            token, 
+            settings.SECRET_KEY, 
+            algorithms=[settings.ALGORITHM]
+        )
+        
+        # Extract user_id string from payload
+        user_id_str: str = payload.get("user_id")
+        if user_id_str is None:
+            raise credentials_exception
+
+        # Validate that string is a legitimate UUID format
+        user_id = UUID(user_id_str)
+
+    except (JWTError, ValueError):
+        # JWTError catches invalid signature/expiration
+        # ValueError catches malformed UUID strings
+        raise credentials_exception
+
+    # Query user using converted UUID object
     user = db.query(models.User).filter(models.User.id == user_id).first()
+    
     if user is None:
         raise credentials_exception
-    return user
 
+    return user
 
 def get_current_active_role(token: str = Depends(oauth2_scheme)) -> str:
     credentials_exception = HTTPException(

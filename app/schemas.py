@@ -11,7 +11,7 @@ Includes:
 - Driver profile schemas
 - Admin schemas
 """
-
+from uuid import UUID
 from typing import Optional, List
 from datetime import datetime, date
 import re
@@ -258,7 +258,7 @@ class UserOut(BaseModel):
     Capability fields are computed based on actual verification states.
     """
 
-    id: int
+    id: UUID
     email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
     is_active: bool
@@ -367,8 +367,8 @@ class DriverProfileOut(BaseModel):
     Driver profile response model.
     """
 
-    id: int
-    user_id: int
+    id: UUID
+    user_id: UUID
     license_number: Optional[str] = None
     license_photo_url: Optional[str] = None
     license_expiry_date: Optional[date] = None
@@ -423,7 +423,7 @@ class UserProfileOut(BaseModel):
     User profile returned to the frontend. Includes nested driver details.
     """
 
-    id: int
+    id: UUID  
     email: Optional[str] = None
     phone_number: Optional[str] = None
     full_name: Optional[str] = None
@@ -441,13 +441,13 @@ class UserProfileOut(BaseModel):
     role: UserRoleEnum
     profile_complete: bool
 
-    # Capability fields for React frontend
-    is_passenger: bool
-    is_driver: bool
-    has_driver_application: bool
+    # Capability fields for React frontend (Provide defaults here)
+    is_passenger: bool = True
+    is_driver: bool = False
+    has_driver_application: bool = False
     driver_application_status: Optional[VerificationStatusEnum] = None
-    can_book_rides: bool
-    can_offer_rides: bool
+    can_book_rides: bool = True
+    can_offer_rides: bool = False
 
     created_at: datetime
     updated_at: datetime
@@ -459,8 +459,6 @@ class UserProfileOut(BaseModel):
         from_attributes=True,
         use_enum_values=True,
     )
-
-
 # ===============================================================
 # COMBINED PROFILE UPDATE
 # ===============================================================

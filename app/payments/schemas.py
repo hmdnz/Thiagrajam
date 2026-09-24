@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 from datetime import date, datetime
 from decimal import Decimal
-
+from uuid import UUID
 from app.payments.models import (
     PaymentProviderEnum,
     PaymentStatusEnum,
@@ -41,12 +41,11 @@ class PaymentInitializeOut(BaseModel):
 
 class PaymentVerifyIn(BaseModel):
     transaction_ref: str
-    # provider is taken from the stored Payment row — not trusted here
 
 
 class PaymentOut(BaseModel):
     id: int
-    user_id: int
+    user_id: UUID
     booking_id: Optional[int] = None
     purpose: PaymentPurposeEnum
     provider: PaymentProviderEnum
@@ -122,24 +121,20 @@ class PayoutAdminReviewIn(BaseModel):
 
 class PayoutOut(BaseModel):
     id: int
-    driver_id: int
+    driver_id: UUID
     payout_ref: str
     provider_ref: Optional[str] = None
-    provider: PaymentProviderEnum
     gross_amount_kobo: int
     commission_kobo: int
     tax_kobo: int
     net_amount_kobo: int
-    gross_amount_naira: Decimal
-    commission_naira: Decimal
-    tax_naira: Decimal
-    net_amount_naira: Decimal
     currency: str
     bank_code: str
     bank_name: Optional[str] = None
     account_number: str
     account_name: str
-    status: PayoutStatusEnum
+    recipient_code: Optional[str] = None
+    status: str
     raw_status: Optional[str] = None
     failure_reason: Optional[str] = None
     admin_note: Optional[str] = None
@@ -156,7 +151,7 @@ class PayoutOut(BaseModel):
 
 class TransactionOut(BaseModel):
     id: int
-    user_id: int
+    user_id: UUID
     payment_id: Optional[int] = None
     booking_id: Optional[int] = None
     payout_id: Optional[int] = None
@@ -180,7 +175,7 @@ class TransactionOut(BaseModel):
 
 class WalletOut(BaseModel):
     id: int
-    user_id: int
+    user_id: UUID
     available_balance_kobo: int
     pending_balance_kobo: int
     lifetime_credits_kobo: int
@@ -210,7 +205,7 @@ class StatementGenerateIn(BaseModel):
 
 class StatementOut(BaseModel):
     id: int
-    user_id: int
+    user_id: UUID
     period_start: date
     period_end: date
     opening_balance_kobo: int

@@ -146,7 +146,6 @@ class User(Base):
 
     # Profile & Security Attributes
     photo_url = Column(String, nullable=True)
-    profile_complete = Column(Boolean, default=False, nullable=False)
     otp_verification_id = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -157,15 +156,39 @@ class User(Base):
         nullable=False,
     )
 
+    # Dynamic Profile Completion Property
+    @property
+    def profile_complete(self) -> bool:
+        """
+        Calculates whether all required profile fields have been provided.
+        Evaluated dynamically during Pydantic serialization.
+        """
+        required_fields = [
+            self.email,
+            self.phone_number,
+            self.full_name,
+            self.address,
+            self.date_of_birth,
+            self.gender,
+            self.blood_group,
+            self.health_conditions,
+            self.nin,
+            self.photo_url,
+        ]
+
+        return all(
+            field is not None and str(field).strip() != ""
+            for field in required_fields
+        )
+
     # Relationships
     driver_profile = relationship("DriverProfile", back_populates="user", uselist=False)
+    cars = relationship("Car", back_populates="owner")
+    bookings = relationship("Booking", back_populates="passenger")
+    rides = relationship("Ride", back_populates="driver")
 
-    def update_profile_complete(self):
-        """Helper to determine if minimal passenger profile requirements are met."""
-        required_fields = [self.full_name, self.email, self.phone_number]
-        self.profile_complete = all(field is not None and field != "" for field in required_fields)
-
-
+    
+   
 class DriverProfile(Base):
     __tablename__ = "driver_profiles"
 

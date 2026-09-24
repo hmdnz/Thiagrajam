@@ -279,7 +279,7 @@ def update_my_profile(
         )
         current_user.nin_verification_notes = None
 
-    current_user.update_profile_complete()
+    # current_user.update_profile_complete()
 
     # ========================================================
     # DRIVER PREFERENCES — APPLY FIELD UPDATES

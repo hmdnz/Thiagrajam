@@ -1,13 +1,19 @@
+"""
+app/routers/users2.py
+"""
+
 import re
 from typing import List
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import email_utils, models, oauth2, schemas, utils
-from ..database import get_db
+# Absolute imports prevent router load failures during app startup
+from app import email_utils, models, oauth2, schemas, utils
+from app.database import get_db
 
 FRONTEND_URL = "https://app.wenyfour.com.ng"
 
@@ -58,19 +64,28 @@ def create_user(
     - Sends verification email or KudiSMS OTP based on provided contact info.
     """
     hashed_password = utils.hash(user.password)
-    user_dict = user.model_dump()
+
+    # Dump fields explicitly provided by payload
+    user_dict = user.model_dump(exclude_unset=True)
     user_dict["password"] = hashed_password
+
+    # Strip computed properties if sent in payload
+    user_dict.pop("profile_complete", None)
+
+    # Convert empty strings to None so unique constraints don't trigger collisions
+    for key in ["email", "phone_number", "nin"]:
+        if key in user_dict and isinstance(user_dict[key], str) and not user_dict[key].strip():
+            user_dict[key] = None
 
     if user_dict.get("phone_number"):
         user_dict["phone_number"] = format_nigerian_phone(user_dict["phone_number"])
 
-    # Force role to passenger regardless of payload
+    # Force default role to passenger
     user_dict["role"] = models.UserRoleEnum.passenger
 
     new_user = models.User(**user_dict)
     
     # Initial status attributes
-    new_user.profile_complete = False
     new_user.is_active = False 
     new_user.is_verified = False
     new_user.nin_verified = False
@@ -80,16 +95,17 @@ def create_user(
     try:
         db.commit()
         db.refresh(new_user)
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
+        print(f"\n[DB INTEGRITY ERROR DETAIL]: {e.orig}\n")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email or phone number already exists.",
+            detail="Email, phone number, or unique identifier already exists.",
         )
 
     # Dispatch Email Verification
     if new_user.email:
-        verify_token = oauth2.create_email_verification_token(new_user.id)
+        verify_token = oauth2.create_email_verification_token(str(new_user.id))
         verify_link = f"{FRONTEND_URL}/verify-email?token={verify_token}"
         background_tasks.add_task(
             email_utils.send_confirmation_email,
@@ -107,8 +123,8 @@ def create_user(
         else:
             print(f"[OTP DISPATCH FAILED] user_id={new_user.id} error={otp_result.get('error')}")
 
-    # Generate immediate login token
-    new_user.access_token = oauth2.create_access_token(data={"user_id": new_user.id})
+    # Generate immediate access token (cast UUID to str)
+    new_user.access_token = oauth2.create_access_token(data={"user_id": str(new_user.id)})
     new_user.token_type = "bearer"
 
     return new_user
@@ -116,10 +132,7 @@ def create_user(
 
 @router.post("/verify-otp", status_code=status.HTTP_200_OK)
 def verify_otp(request: schemas.VerifyOTP, db: Session = Depends(get_db)):
-    """
-    Verifies the OTP received via SMS.
-    On success, activates the account and marks it verified.
-    """
+    """Verifies SMS OTP, activates account, and returns access token."""
     formatted_phone = format_nigerian_phone(request.phone_number)
 
     user = db.query(models.User).filter(
@@ -142,27 +155,20 @@ def verify_otp(request: schemas.VerifyOTP, db: Session = Depends(get_db)):
             detail=result.get("msg", "Invalid or expired OTP."),
         )
 
-    # Mark user as active and verified
     user.is_verified = True
     user.is_active = True
-    user.otp_verification_id = None  # Consume OTP
+    user.otp_verification_id = None
     db.commit()
-
-
-    # Refresh to load committed database state
     db.refresh(user)
 
-    # Generate access token
-    access_token = oauth2.create_access_token(data={"user_id": user.id})
+    access_token = oauth2.create_access_token(data={"user_id": str(user.id)})
 
-    return {"message": "Phone number verified successfully."}
+    return {"message": "Phone number verified successfully.", "access_token": access_token}
 
 
 @router.post("/resend-otp", status_code=status.HTTP_200_OK)
 def resend_otp(request: schemas.ResendOTP, db: Session = Depends(get_db)):
-    """
-    Triggers a fresh OTP send for a phone number. Overwrites old verification ID.
-    """
+    """Triggers a fresh OTP send for a phone number."""
     formatted_phone = format_nigerian_phone(request.phone_number)
 
     user = db.query(models.User).filter(
@@ -199,8 +205,8 @@ def get_all_users(db: Session = Depends(get_db)):
 
 
 @router.get("/users/{id}", response_model=schemas.UserOut)
-def get_user(id: int, db: Session = Depends(get_db)):
-    """Fetches a single user by ID."""
+def get_user(id: UUID, db: Session = Depends(get_db)):
+    """Fetches a single user by UUID."""
     user = db.query(models.User).filter(models.User.id == id).first()
     if not user:
         raise HTTPException(
@@ -212,11 +218,11 @@ def get_user(id: int, db: Session = Depends(get_db)):
 
 @router.delete("/users/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
-    id: int,
+    id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
 ):
-    """Deletes a user account by ID with permissions check."""
+    """Deletes a user account by UUID with permissions check."""
     user_query = db.query(models.User).filter(models.User.id == id)
     user = user_query.first()
 
@@ -282,7 +288,7 @@ def forgot_password(
         if not user:
             return generic_response
 
-        reset_token = oauth2.create_reset_token(user.id)
+        reset_token = oauth2.create_reset_token(str(user.id))
         reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
 
         background_tasks.add_task(

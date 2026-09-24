@@ -18,6 +18,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
 
@@ -81,12 +82,7 @@ class Payment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    user_id = Column(
-        Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     booking_id = Column(
         Integer,
@@ -165,7 +161,7 @@ class Transaction(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     user_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -241,12 +237,12 @@ class Refund(Base):
         nullable=True,
     )
     requested_by_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
     reviewed_by_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -300,14 +296,7 @@ class Payout(Base):
     __tablename__ = "payouts"
 
     id = Column(Integer, primary_key=True, index=True)
-
-    driver_id = Column(
-        Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
+    driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     payout_ref = Column(String, unique=True, nullable=False, index=True)
     provider_ref = Column(String, nullable=True)
     provider = Column(Enum(PaymentProviderEnum), nullable=False)
@@ -361,12 +350,7 @@ class Statement(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    user_id = Column(
-        Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
 
     period_start = Column(Date, nullable=False)
     period_end = Column(Date, nullable=False)
@@ -413,13 +397,7 @@ class Wallet(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    user_id = Column(
-        Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,
-        index=True,
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
 
     available_balance_kobo = Column(Integer, nullable=False, default=0)
     pending_balance_kobo = Column(Integer, nullable=False, default=0)
@@ -439,4 +417,3 @@ class Wallet(Base):
     )
 
     user = relationship("User", backref="wallet", uselist=False)
-    
