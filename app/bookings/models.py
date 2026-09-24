@@ -33,8 +33,7 @@ class Booking(Base):
         nullable=False,
     )
 
-    passenger_id = Column(
-        Integer,
+    passenger_id = Column(UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )

@@ -1,8 +1,8 @@
-"""Fix UUID imports and regenerate baseline schema
+"""Fix passenger_id UUID type in Booking model
 
-Revision ID: 4a66e9f5daac
+Revision ID: d21a45d41a36
 Revises: 
-Create Date: 2026-09-24 02:26:29.178896
+Create Date: 2026-09-24 02:30:42.294442
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '4a66e9f5daac'
+revision: str = 'd21a45d41a36'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -158,7 +158,7 @@ def upgrade() -> None:
     op.create_table('bookings',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('ride_id', postgresql.UUID(as_uuid=True), nullable=False),
-    sa.Column('passenger_id', sa.Integer(), nullable=False),
+    sa.Column('passenger_id', postgresql.UUID(as_uuid=True), nullable=False),
     sa.Column('car_id', sa.Integer(), nullable=False),
     sa.Column('travel_date', sa.Date(), nullable=False),
     sa.Column('seats_booked', sa.Integer(), nullable=False),
