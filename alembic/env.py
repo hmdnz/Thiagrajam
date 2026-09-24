@@ -1,3 +1,9 @@
+# alembic/env.py
+
+from app.database import SQLALCHEMY_DATABASE_URL, Base
+import app  # <--- Importing 'app' executes app/__init__.py and registers ALL submodule models
+
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool

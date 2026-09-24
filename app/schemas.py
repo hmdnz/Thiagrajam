@@ -85,7 +85,8 @@ class PostResponse(PostBase):
     created_at: datetime
 
     model_config = ConfigDict(
-        from_attributes=True
+        from_attributes=True,
+        use_enum_values=True,
     )
 
 
@@ -280,7 +281,10 @@ class UserOut(BaseModel):
     access_token: Optional[str] = None
     token_type: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        use_enum_values=True,
+    )
 
 
 class ChangePasswordRequest(BaseModel):
@@ -338,7 +342,10 @@ class DriverPreferencesResponse(BaseModel):
     smoking: Optional[SmokingEnum] = None
     pets: Optional[PetsEnum] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        use_enum_values=True,
+    )
 
 
 class DriverProfileUpdate(BaseModel):
@@ -377,7 +384,10 @@ class DriverProfileOut(BaseModel):
     license_verification_status: VerificationStatusEnum
     license_verification_notes: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        use_enum_values=True,
+    )
 
 
 # ===============================================================
@@ -445,7 +455,10 @@ class UserProfileOut(BaseModel):
     # Nested driver profile
     driver_profile: Optional[DriverProfileOut] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        use_enum_values=True,
+    )
 
 
 # ===============================================================

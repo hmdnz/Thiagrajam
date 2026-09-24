@@ -255,7 +255,7 @@
 #     car = relationship("Car", back_populates="photos")
 
 
-
+from app.database import Base
 
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship

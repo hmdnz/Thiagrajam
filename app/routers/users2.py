@@ -148,6 +148,13 @@ def verify_otp(request: schemas.VerifyOTP, db: Session = Depends(get_db)):
     user.otp_verification_id = None  # Consume OTP
     db.commit()
 
+
+    # Refresh to load committed database state
+    db.refresh(user)
+
+    # Generate access token
+    access_token = oauth2.create_access_token(data={"user_id": user.id})
+
     return {"message": "Phone number verified successfully."}
 
 
