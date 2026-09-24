@@ -20,10 +20,13 @@ from app.bookings import routers as bookings_router
 from app.rides import routers as rides_router
 from app.payments import routers as payment_routers
 
+# Add this import at the top of app/cars/models.py
+from sqlalchemy.dialects.postgresql import UUID
+
 
 # Creates any tables that don't already exist yet. Does NOT apply schema
 # changes to existing tables (e.g. new columns) — those need Alembic.
-models.Base.metadata.create_all(bind=engine)
+# models.Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(
