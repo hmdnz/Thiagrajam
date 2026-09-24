@@ -9,12 +9,14 @@ from sqlalchemy import (
     Integer,
     String,
     Float,
+    Date,
     Boolean,
     Numeric,
     Time,
     DateTime,
     ForeignKey,
 )
+
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
