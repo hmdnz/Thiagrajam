@@ -4,7 +4,8 @@ app/rides/models.py
 
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, TIMESTAMP, Time, Numeric, Date, Float, text
 from sqlalchemy.orm import relationship
-
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.sql import func
 from app.database import Base
 
 
@@ -12,56 +13,27 @@ class Ride(Base):
     __tablename__ = "rides"
 
     id = Column(Integer, primary_key=True, index=True)
-
-    driver_id = Column(
-        Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-
-    car_id = Column(
-        Integer,
-        ForeignKey("cars.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-
-    # --- Macro Journey (City Level) ---
-    origin_city = Column(String, nullable=False, index=True)      # e.g., "Kano"
-    destination_city = Column(String, nullable=False, index=True) # e.g., "Abuja"
-
-   
-
+    driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    car_id = Column(Integer, ForeignKey("cars.id", ondelete="CASCADE"), nullable=False)
+    origin_city = Column(String, nullable=False)
+    destination_city = Column(String, nullable=False)
     pickup_location = Column(String, nullable=False)
-    pickup_lat = Column(Float, nullable=True)
-    pickup_lng = Column(Float, nullable=True)
-
+    pickup_lat = Column(Float)
+    pickup_lng = Float
     dropoff_location = Column(String, nullable=False)
-    dropoff_lat = Column(Float, nullable=True)
-    dropoff_lng = Column(Float, nullable=True)
-
+    dropoff_lat = Column(Float)
+    dropoff_lng = Column(Float)
     pickup_time = Column(Time, nullable=False)
-    is_recurring = Column(Boolean, default=False, nullable=False)
-
+    is_recurring = Column(Boolean, nullable=False)
     max_passengers = Column(Integer, nullable=False)
-    max_back_seat_passengers = Column(Integer, nullable=True)
-
-    instant_booking = Column(Boolean, default=False, nullable=False)
+    max_back_seat_passengers = Column(Integer)
+    instant_booking = Column(Boolean, nullable=False)
     price_per_seat = Column(Numeric(10, 2), nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
+    is_active = Column(Boolean, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    created_at = Column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        server_default=text("now()"),
-    )
-
-    updated_at = Column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        server_default=text("now()"),
-        onupdate=text("now()"),
-    )
-
+    # FIX THIS LINE: Ensure closing parenthesis ')' is present
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     # Relationships
     driver = relationship("User", back_populates="rides")
     car = relationship("Car", back_populates="rides")
