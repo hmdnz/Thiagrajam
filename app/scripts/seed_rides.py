@@ -1,6 +1,5 @@
 import random
 from datetime import date, datetime, timedelta, time
-from decimal import Decimal
 from app.database import SessionLocal
 from app.rides.models import Ride, RideOccurrence, Stopover
 from app.cars.models import Car
@@ -12,7 +11,7 @@ CITIES = [
     "Yola", "Sokoto", "Gusau", "Lagos", "Katsina", "Jos", "Benin", "Calabar"
 ]
 
-# Approximate inter-city route coordinates & distances (in km) to generate realistic prices/stopovers
+# Inter-city route coordinates & locations
 CITY_METADATA = {
     "Abuja": {"lat": 9.0765, "lng": 7.3986, "pickup": "Berger Junction / Utako Motor Park", "dropoff": "Central Business District"},
     "Kaduna": {"lat": 10.5105, "lng": 7.4165, "pickup": "Command Junction", "dropoff": "Kawo Park"},
@@ -36,18 +35,15 @@ COMMON_STOPOVERS = [
 ]
 
 
-def calculate_base_price(origin: str, dest: str) -> Decimal:
+def calculate_base_price(origin: str, dest: str) -> float:
     """Calculates a realistic price based on rough distance between coordinates."""
     o_data = CITY_METADATA[origin]
     d_data = CITY_METADATA[dest]
     
-    # Rough Euclidean distance approximation for pricing scale
     dist = ((o_data["lat"] - d_data["lat"])**2 + (o_data["lng"] - d_data["lng"])**2) ** 0.5
-    
-    # Base fee ₦3,000 + scaling distance factor rounded to nearest ₦500
     estimated_price = 3000 + (dist * 2200)
     rounded_price = round(estimated_price / 500) * 500
-    return Decimal(str(max(4000.0, float(rounded_price))))
+    return float(max(4000.0, rounded_price))
 
 
 def get_car_owner_field():
@@ -59,16 +55,15 @@ def get_car_owner_field():
     elif hasattr(Car, "driver_id"):
         return Car.driver_id
     else:
-        raise AttributeError("Car model has no recognized user foreign key (user_id, owner_id, or driver_id).")
+        raise AttributeError("Car model has no recognized user foreign key.")
 
 
 def seed_rides():
     db = SessionLocal()
     try:
-        # Determine the user field on Car
         car_user_fk = get_car_owner_field()
 
-        # 1. Fetch valid Drivers using standard query
+        # Fetch active drivers
         drivers = db.query(User).filter(
             User.is_driver == True, 
             User.is_active == True
@@ -78,7 +73,7 @@ def seed_rides():
             print("❌ No active drivers found in the database. Run user seeder first.")
             return
 
-        # 2. Map drivers to their registered cars
+        # Map drivers to their cars
         driver_cars_map = {}
         for driver in drivers:
             cars = db.query(Car).filter(car_user_fk == driver.id).all()
@@ -90,7 +85,7 @@ def seed_rides():
             return
 
         driver_ids = list(driver_cars_map.keys())
-        print(f" Found {len(driver_ids)} drivers with registered vehicles.")
+        print(f"Found {len(driver_ids)} drivers with registered vehicles.")
 
         today = date.today()
         start_date = today + timedelta(days=1)
@@ -99,37 +94,26 @@ def seed_rides():
         rides_created = 0
         occurrences_created = 0
 
-        # 3. Iterate over the next 90 days
+        # Generate rides across 90 days
         for day_offset in range(total_days):
             current_date = start_date + timedelta(days=day_offset)
-            weekday = current_date.weekday()  # 0=Monday, 4=Friday, 5=Saturday, 6=Sunday
+            weekday = current_date.weekday()
 
-            # Higher demand on Friday through Monday
-            if weekday in [0, 4, 5, 6]:
-                num_rides_today = random.randint(12, 20)
-            else:
-                num_rides_today = random.randint(4, 9)
+            num_rides_today = random.randint(12, 20) if weekday in [0, 4, 5, 6] else random.randint(4, 9)
 
             for _ in range(num_rides_today):
-                # Select random driver and one of their cars
                 driver_id = random.choice(driver_ids)
                 car = random.choice(driver_cars_map[driver_id])
 
-                # Select distinct origin and destination
                 origin_city, destination_city = random.sample(CITIES, 2)
-
-                # Route details
                 origin_meta = CITY_METADATA[origin_city]
                 dest_meta = CITY_METADATA[destination_city]
                 price = calculate_base_price(origin_city, destination_city)
 
-                # Seating & Capacity
-                car_seats = getattr(car, "seats", None) or getattr(car, "capacity", 4)
+                car_seats = getattr(car, "seats", None) or getattr(car, "capacity", None) or getattr(car, "seats_available", 4)
                 max_passengers = min(car_seats - 1, random.choice([3, 4, 6]))
                 max_passengers = max(1, max_passengers)
-                max_back_seat = max(1, max_passengers - 1)
 
-                # Departure time (70% morning 06:00-10:00, 30% afternoon 13:00-17:00)
                 if random.random() < 0.7:
                     pickup_time = time(hour=random.randint(6, 10), minute=random.choice([0, 15, 30, 45]))
                 else:
@@ -137,54 +121,48 @@ def seed_rides():
 
                 is_recurring = random.choice([True, False])
 
-                # Create Ride
                 ride = Ride(
                     driver_id=driver_id,
                     car_id=car.id,
                     origin_city=origin_city,
                     destination_city=destination_city,
                     pickup_location=origin_meta["pickup"],
-                    pickup_lat=origin_meta["lat"] + random.uniform(-0.02, 0.02),
-                    pickup_lng=origin_meta["lng"] + random.uniform(-0.02, 0.02),
                     dropoff_location=dest_meta["dropoff"],
-                    dropoff_lat=dest_meta["lat"] + random.uniform(-0.02, 0.02),
-                    dropoff_lng=dest_meta["lng"] + random.uniform(-0.02, 0.02),
                     pickup_time=pickup_time,
+                    start_date=current_date,
+                    end_date=current_date + timedelta(days=30) if is_recurring else None,
                     is_recurring=is_recurring,
                     max_passengers=max_passengers,
-                    max_back_seat_passengers=max_back_seat,
-                    instant_booking=random.choice([True, False]),
                     price_per_seat=price,
                     is_active=True
                 )
                 db.add(ride)
-                db.flush()  # Obtain ride.id
+                db.flush()
 
-                # Create RideOccurrence for this date
                 occurrence = RideOccurrence(
                     ride_id=ride.id,
                     date=current_date,
-                    seats_remaining=random.randint(1, max_passengers)
+                    seats_remaining=random.randint(1, max_passengers),
+                    is_cancelled=False
                 )
                 db.add(occurrence)
                 occurrences_created += 1
 
-                # Optional: Add Stopovers for longer trips
                 if random.random() < 0.4:
                     stopover_name = random.choice(COMMON_STOPOVERS)
                     stopover = Stopover(
                         ride_id=ride.id,
-                        location_name=stopover_name,
-                        lat=origin_meta["lat"] + 0.5,
-                        lng=origin_meta["lng"] + 0.5,
-                        price_from_pickup=Decimal(str(round(float(price) * 0.5, 2)))
+                        city_name=stopover_name,
+                        address=f"{stopover_name} Main Station",
+                        order=1,
+                        price_from_origin=round(price * 0.5, 2)
                     )
                     db.add(stopover)
 
                 rides_created += 1
 
         db.commit()
-        print(f" Successfully created {rides_created} rides and {occurrences_created} occurrences across 90 days!")
+        print(f"Successfully created {rides_created} rides and {occurrences_created} occurrences across 90 days!")
 
     except Exception as e:
         db.rollback()

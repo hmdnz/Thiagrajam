@@ -17,9 +17,10 @@ from sqlalchemy import (
     Integer,
     String,
     Time,
+    
 )
 from sqlalchemy.orm import relationship
-
+from sqlalchemy.dialects.postgresql import UUID
 from app.database import Base
 
 
@@ -47,11 +48,18 @@ class Ride(Base):
     __tablename__ = "rides"
 
     id = Column(Integer, primary_key=True, index=True)
-    driver_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     car_id = Column(Integer, ForeignKey("cars.id", ondelete="SET NULL"), nullable=True)
 
     origin_city = Column(String, nullable=False, index=True)
+    pickup_location = Column(String, nullable=False, index=True)
+    pickup_lat = Column(Float, nullable=True)
+    pickup_lng = Column(Float, nullable=True)
+
     destination_city = Column(String, nullable=False, index=True)
+    dropoff_location = Column(String, nullable=False, index=True)
+    dropoff_lat = Column(Float, nullable=True)
+    dropoff_lng = Column(Float, nullable=True)
     
     pickup_time = Column(Time, nullable=False)
     price_per_seat = Column(Float, nullable=False)
@@ -83,7 +91,6 @@ class Ride(Base):
             "is_active",
         ),
     )
-
 
 # ==========================================
 # STOPOVER MODEL

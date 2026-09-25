@@ -1,9 +1,11 @@
 import time as time_lib 
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Generic, List, Optional, TypeVar
+from typing import Any, Generic, List, Optional, TypeVar
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.rides.models import RecurrenceType
 
 T = TypeVar("T")
 
@@ -17,15 +19,26 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 
 class RideBase(BaseModel):
-    origin_city: Optional[str] = None
-    destination_city: Optional[str] = None
-    pickup_location: Optional[str] = None  # Allows None
-    dropoff_location: Optional[str] = None  # Allows None
+    origin_city: str
+    pickup_location: str
+    pickup_lat: Optional[float] = Field(None, ge=-90.0, le=90.0, description="Latitude for pickup location")
+    pickup_lng: Optional[float] = Field(None, ge=-180.0, le=180.0, description="Longitude for pickup location")
+
+    destination_city: str
+    dropoff_location: str
+    dropoff_lat: Optional[float] = Field(None, ge=-90.0, le=90.0, description="Latitude for dropoff location")
+    dropoff_lng: Optional[float] = Field(None, ge=-180.0, le=180.0, description="Longitude for dropoff location")
+
     pickup_time: time
-    max_passengers: int
-    max_back_seat_passengers: Optional[int] = None
-    instant_booking: bool = False
-    price_per_seat: Decimal
+    price_per_seat: float = Field(gt=0, description="Price per seat in Naira")
+    max_passengers: int = Field(gt=0, description="Maximum number of available seats")
+
+    is_recurring: bool = False
+    recurrence_type: Optional[RecurrenceType] = None
+    custom_days: Optional[List[int]] = None
+
+    start_date: date
+    end_date: Optional[date] = None
 
 
 class StopoverIn(BaseModel):
