@@ -186,8 +186,7 @@ class User(Base):
     cars = relationship("Car", back_populates="owner")
     bookings = relationship("Booking", back_populates="passenger")
     rides = relationship("Ride", back_populates="driver")
-
-    
+    rides_driven = relationship("Ride", back_populates="driver", overlaps="rides")
    
 class DriverProfile(Base):
     __tablename__ = "driver_profiles"
