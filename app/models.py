@@ -54,30 +54,27 @@ class BloodGroupEnum(str, enum.Enum):
 
 
 class ChattinessEnum(str, enum.Enum):
-    quiet = "quiet"
-    moderate = "moderate"
-    chatty = "chatty"
+    very_talkative = "Very talkative!"
+    warm_up = "I chat once I warm up"
+    quiet = "Quiet rider"
 
 
 class MusicEnum(str, enum.Enum):
-    no_music = "no_music"
-    pop = "pop"
-    rock = "rock"
-    afrobeats = "afrobeats"
-    classical = "classical"
-    any = "any"
+    always_playing = "Always playing tunes!"
+    depends_on_mood = "Music depends on the mood"
+    no_music = "Prefer no music"
 
 
 class SmokingEnum(str, enum.Enum):
-    no_smoking = "no_smoking"
-    vape_only = "vape_only"
-    allowed = "allowed"
+    allowed = "Smoking allowed in the vehicle"
+    outside_breaks = "Smoke breaks outside the car only"
+    no_smoking = "Strictly smoke-free ride"
 
 
 class PetsEnum(str, enum.Enum):
-    no_pets = "no_pets"
-    small_pets = "small_pets"
-    allowed = "allowed"
+    pet_friendly = "Pet-friendly ride!"
+    case_by_case = "Open to pets depending on type/size"
+    no_pets = "No pets allowed"
 
 
 # ===============================================================
