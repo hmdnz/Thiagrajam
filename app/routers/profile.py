@@ -162,7 +162,7 @@ def _get_or_create_driver_profile(
 
 @router.get(
     "/me",
-    response_model=schemas.UserProfileOut,
+    response_model=schemas.UserBase,
 )
 def get_my_profile(
     db: Session = Depends(get_db),
@@ -188,7 +188,7 @@ def get_my_profile(
 
 @router.put(
     "/me",
-    response_model=schemas.UserProfileOut,
+    response_model=schemas.UserBase,
 )
 def update_my_profile(
     updates: schemas.ProfileUpdate,
@@ -452,7 +452,7 @@ async def upload_profile_photo(
     # STEP 9: UPDATE PROFILE COMPLETION
     # ========================================================
 
-    current_user.update_profile_complete()
+    # current_user.profile_complete = True
 
     # ========================================================
     # STEP 10: SAVE DATABASE

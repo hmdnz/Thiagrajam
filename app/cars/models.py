@@ -1,18 +1,20 @@
-from app.database import Base
-
 from datetime import datetime
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from app.database import Base  # Adjust import path if necessary
+
+from app.database import Base
 
 
 class Car(Base):
     __tablename__ = "cars"
 
     id = Column(Integer, primary_key=True, index=True)
-    driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id", 
-   ondelete="CASCADE"), nullable=False)
+    driver_id = Column(
+        UUID(as_uuid=True), 
+        ForeignKey("users.id", ondelete="CASCADE"), 
+        nullable=False
+    )
     make = Column(String, nullable=False)
     model = Column(String, nullable=False)
     year = Column(Integer, nullable=False)
@@ -32,16 +34,18 @@ class Car(Base):
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
     )
 
-    # Relationships
-    owner = relationship("User", back_populates="cars")
+    # Use fully qualified paths so SQLAlchemy knows exactly which module owns each class
+    owner = relationship("app.models.User", back_populates="cars")
 
     photos = relationship(
         "CarPhoto", back_populates="car", cascade="all, delete-orphan"
     )
 
     rides = relationship(
-        "Ride", back_populates="car", cascade="all, delete-orphan"
+        "app.rides.models.Ride", back_populates="car", cascade="all, delete-orphan"
     )
+
+    bookings = relationship("app.bookings.models.Booking", back_populates="car")
 
 
 class CarPhoto(Base):

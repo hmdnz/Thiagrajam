@@ -145,6 +145,7 @@
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
+from uuid import UUID
 
 
 class CarPhotoOut(BaseModel):
@@ -160,7 +161,7 @@ class CarPhotoOut(BaseModel):
 
 class CarOut(BaseModel):
     id: int
-    driver_id: int
+    driver_id: UUID
     make: str
     model: str
     year: int

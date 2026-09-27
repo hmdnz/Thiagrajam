@@ -1,4 +1,10 @@
-from app.database import Base
+"""
+app/models.py
+
+Core shared SQLAlchemy ORM models and Enums for User, DriverProfile,
+Post, Ride, Booking, Payment, and Review entities.
+"""
+from app.cars.models import Car
 import enum
 from uuid import uuid4
 
@@ -8,17 +14,18 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum as SQLEnum,
+    Float,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
-     UUID, func
+    UUID,
+    func,
 )
+from sqlalchemy.orm import relationship
 
-from sqlalchemy.orm import declarative_base, relationship
-
-# Base = declarative_base()
-
+from app.database import Base
 
 # ===============================================================
 # ENUMS
@@ -58,12 +65,14 @@ class ChattinessEnum(str, enum.Enum):
     very_talkative = "Very talkative!"
     warm_up = "I chat once I warm up"
     quiet = "Quiet rider"
+    chatty = "chatty"  # <--- Add this missing value
 
 
 class MusicEnum(str, enum.Enum):
     always_playing = "Always playing tunes!"
     depends_on_mood = "Music depends on the mood"
     no_music = "Prefer no music"
+    
 
 
 class SmokingEnum(str, enum.Enum):
@@ -78,12 +87,34 @@ class PetsEnum(str, enum.Enum):
     no_pets = "No pets allowed"
 
 
+class RideStatusEnum(str, enum.Enum):
+    scheduled = "scheduled"
+    in_progress = "in_progress"
+    completed = "completed"
+    cancelled = "cancelled"
+
+
+class BookingStatusEnum(str, enum.Enum):
+    pending = "pending"
+    confirmed = "confirmed"
+    cancelled = "cancelled"
+    completed = "completed"
+
+
+class PaymentStatusEnum(str, enum.Enum):
+    pending = "pending"
+    successful = "successful"
+    failed = "failed"
+    refunded = "refunded"
+
+
 # ===============================================================
 # MODELS
 # ===============================================================
 
 class Post(Base):
     __tablename__ = "posts"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(200), nullable=False)
@@ -95,6 +126,7 @@ class Post(Base):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     full_name = Column(String, nullable=True)
@@ -103,29 +135,24 @@ class User(Base):
     password = Column(String, nullable=False)
     role = Column(SQLEnum(UserRoleEnum), default=UserRoleEnum.passenger, nullable=False)
 
-    # Demographic & Personal Info
     gender = Column(SQLEnum(GenderEnum), nullable=True)
     date_of_birth = Column(Date, nullable=True)
     address = Column(Text, nullable=True)
 
-    # Health & Emergency Contact
     blood_group = Column(SQLEnum(BloodGroupEnum), nullable=True)
     health_conditions = Column(Text, nullable=True)
     emergency_contact = Column(String, nullable=True)
     next_of_kin_name = Column(String, nullable=True)
     next_of_kin_relationship = Column(String, nullable=True)
 
-    # General Account Status & Safety Flags
     is_active = Column(Boolean, default=False, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
     is_suspended = Column(Boolean, default=False, nullable=False)
 
-    # Driver Access Control Flags
     is_driver = Column(Boolean, default=False, nullable=False)
     can_offer_rides = Column(Boolean, default=False, nullable=False)
 
-    # National Identification Number (NIN)
     nin = Column(String, unique=True, nullable=True)
     nin_verified = Column(Boolean, default=False, nullable=False)
     nin_verification_status = Column(
@@ -135,14 +162,12 @@ class User(Base):
     )
     nin_verification_notes = Column(Text, nullable=True)
 
-    # Shared Social / Travel Preferences
     chattiness = Column(SQLEnum(ChattinessEnum), nullable=True)
     music_preference = Column(SQLEnum(MusicEnum), nullable=True)
     smoking_preference = Column(SQLEnum(SmokingEnum), nullable=True)
     pets_preference = Column(SQLEnum(PetsEnum), nullable=True)
     pet_friendly = Column(Boolean, default=False, nullable=False)
 
-    # Profile & Security Attributes
     photo_url = Column(String, nullable=True)
     otp_verification_id = Column(String, nullable=True)
 
@@ -154,13 +179,8 @@ class User(Base):
         nullable=False,
     )
 
-    # Dynamic Profile Completion Property
     @property
     def profile_complete(self) -> bool:
-        """
-        Calculates whether all required profile fields have been provided.
-        Evaluated dynamically during Pydantic serialization.
-        """
         required_fields = [
             self.email,
             self.phone_number,
@@ -180,33 +200,49 @@ class User(Base):
         )
 
     # Relationships
-    driver_profile = relationship("DriverProfile", back_populates="user", uselist=False)
-    cars = relationship("Car", back_populates="owner")
-    bookings = relationship("Booking", back_populates="passenger")
-    rides = relationship("Ride", back_populates="driver")
-    rides_driven = relationship("Ride", back_populates="driver", overlaps="rides")
-   
+    driver_profile = relationship("DriverProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    offered_rides = relationship(
+      "app.rides.models.Ride",
+      foreign_keys="[Ride.driver_id]",
+      back_populates="driver",
+  )
+    bookings = relationship("Booking", back_populates="passenger", cascade="all, delete-orphan")
+    # bookings = relationship("app.bookings.models.Booking", back_populates="user", cascade="all, delete-orphan")
+    cars = relationship("app.cars.models.Car", back_populates="owner", cascade="all, delete-orphan")    
+    # rides = relationship(
+    # "app.rides.models.Ride", back_populates="driver", overlaps="offered_rides"
+# )
+    # reviews_given = relationship("Review", foreign_keys="Review.reviewer_id", back_populates="reviewer")
+    # reviews_received = relationship("Review", foreign_keys="Review.reviewee_id", back_populates="reviewee")
+
+    payments = relationship(
+        "app.payments.models.Payment",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+  
+
+
+
 class DriverProfile(Base):
     __tablename__ = "driver_profiles"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
 
-    # Vehicle Specifications
     car_make = Column(String, nullable=True)
     car_model = Column(String, nullable=True)
     car_year = Column(Integer, nullable=True)
     car_color = Column(String, nullable=True)
     plate_number = Column(String, unique=True, nullable=True)
 
-    # Driver Details & Preferences
     about_me = Column(Text, nullable=True)
     chattiness = Column(SQLEnum(ChattinessEnum), nullable=True)
     music = Column(SQLEnum(MusicEnum), nullable=True)
     smoking = Column(SQLEnum(SmokingEnum), nullable=True)
     pets = Column(SQLEnum(PetsEnum), nullable=True)
 
-    # Driver Licensing & Legal
     license_number = Column(String, unique=True, nullable=True)
     license_expiry_date = Column(Date, nullable=True)
     license_front_url = Column(String, nullable=True)
@@ -227,11 +263,9 @@ class DriverProfile(Base):
         nullable=False,
     )
 
-    # Relationships
     user = relationship("User", back_populates="driver_profile")
 
     def is_complete(self) -> bool:
-        """Determines if the driver has provided all required verification fields."""
         required = [
             self.car_make,
             self.car_model,
@@ -241,3 +275,95 @@ class DriverProfile(Base):
             self.license_front_url,
         ]
         return all(f is not None and f != "" for f in required)
+
+
+# class Ride(Base):
+#     __tablename__ = "rides"
+#     __table_args__ = {"extend_existing": True}
+
+#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+#     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+#     origin = Column(String, nullable=False)
+#     destination = Column(String, nullable=False)
+#     departure_time = Column(DateTime(timezone=True), nullable=False)
+#     available_seats = Column(Integer, nullable=False)
+#     price_per_seat = Column(Numeric(10, 2), nullable=False)
+
+#     origin_latitude = Column(Float, nullable=True)
+#     origin_longitude = Column(Float, nullable=True)
+#     destination_latitude = Column(Float, nullable=True)
+#     destination_longitude = Column(Float, nullable=True)
+
+#     status = Column(SQLEnum(RideStatusEnum), default=RideStatusEnum.scheduled, nullable=False)
+#     notes = Column(Text, nullable=True)
+
+#     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+#     updated_at = Column(
+#         DateTime(timezone=True),
+#         server_default=func.now(),
+#         onupdate=func.now(),
+#         nullable=False,
+#     )
+
+#     driver = relationship("User", back_populates="offered_rides")
+#     bookings = relationship("Booking", back_populates="ride", cascade="all, delete-orphan")
+
+
+# class Booking(Base):
+#     __tablename__ = "bookings"
+#     __table_args__ = {"extend_existing": True}
+
+#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+#     ride_id = Column(UUID(as_uuid=True), ForeignKey("rides.id", ondelete="CASCADE"), nullable=False)
+#     passenger_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+#     seats_booked = Column(Integer, default=1, nullable=False)
+#     total_price = Column(Numeric(10, 2), nullable=False)
+#     status = Column(SQLEnum(BookingStatusEnum), default=BookingStatusEnum.pending, nullable=False)
+
+#     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+#     updated_at = Column(
+#         DateTime(timezone=True),
+#         server_default=func.now(),
+#         onupdate=func.now(),
+#         nullable=False,
+#     )
+
+#     ride = relationship("Ride", back_populates="bookings")
+#     passenger = relationship("User", back_populates="bookings")
+#     payment = relationship("Payment", back_populates="booking", uselist=False, cascade="all, delete-orphan")
+
+
+# class Payment(Base):
+#     __tablename__ = "payments"
+#     __table_args__ = {"extend_existing": True}
+
+#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+#     booking_id = Column(UUID(as_uuid=True), ForeignKey("bookings.id", ondelete="CASCADE"), unique=True, nullable=False)
+
+#     amount = Column(Numeric(10, 2), nullable=False)
+#     transaction_reference = Column(String, unique=True, nullable=False)
+#     status = Column(SQLEnum(PaymentStatusEnum), default=PaymentStatusEnum.pending, nullable=False)
+#     payment_method = Column(String, nullable=True)
+
+#     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+#     booking = relationship("Booking", back_populates="payment")
+
+
+# class Review(Base):
+#     __tablename__ = "reviews"
+#     __table_args__ = {"extend_existing": True}
+
+#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+#     reviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+#     reviewee_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+#     rating = Column(Integer, nullable=False)
+#     comment = Column(Text, nullable=True)
+
+#     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+#     reviewer = relationship("User", foreign_keys=[reviewer_id], back_populates="reviews_given")
+#     reviewee = relationship("User", foreign_keys=[reviewee_id], back_populates="reviews_received")

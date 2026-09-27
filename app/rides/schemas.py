@@ -1,9 +1,14 @@
-import time as time_lib 
+"""
+app/rides/schemas.py
+"""
+
+import time as time_lib
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any, Generic, List, Optional, TypeVar
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from app.rides.models import RecurrenceType
 
@@ -21,41 +26,60 @@ class PaginatedResponse(BaseModel, Generic[T]):
 class RideBase(BaseModel):
     origin_city: str
     pickup_location: str
-    pickup_lat: Optional[float] = Field(None, ge=-90.0, le=90.0, description="Latitude for pickup location")
-    pickup_lng: Optional[float] = Field(None, ge=-180.0, le=180.0, description="Longitude for pickup location")
+    pickup_lat: Optional[float] = Field(
+        None, ge=-90.0, le=90.0, description="Latitude for pickup location"
+    )
+    pickup_lng: Optional[float] = Field(
+        None, ge=-180.0, le=180.0, description="Longitude for pickup location"
+    )
 
     destination_city: str
     dropoff_location: str
-    dropoff_lat: Optional[float] = Field(None, ge=-90.0, le=90.0, description="Latitude for dropoff location")
-    dropoff_lng: Optional[float] = Field(None, ge=-180.0, le=180.0, description="Longitude for dropoff location")
+    dropoff_lat: Optional[float] = Field(
+        None, ge=-90.0, le=90.0, description="Latitude for dropoff location"
+    )
+    dropoff_lng: Optional[float] = Field(
+        None, ge=-180.0, le=180.0, description="Longitude for dropoff location"
+    )
 
     pickup_time: time
     price_per_seat: float = Field(gt=0, description="Price per seat in Naira")
-    max_passengers: int = Field(gt=0, description="Maximum number of available seats")
+    max_passengers: int = Field(
+        gt=0, description="Maximum number of available seats"
+    )
 
     is_recurring: bool = False
     recurrence_type: Optional[RecurrenceType] = None
     custom_days: Optional[List[int]] = None
 
-    start_date: date
+    start_date: Optional[date] = None
     end_date: Optional[date] = None
 
 
 class StopoverIn(BaseModel):
-    location: str
+    location: Optional[str] = None
+    city_name: Optional[str] = None
+    address: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    order: Optional[int] = None
+    price_from_origin: Optional[float] = 0.0
 
 
 class StopoverOut(BaseModel):
     id: int
     ride_id: int
-    order: int
-    price_from_origin: float
+    order: int = Field(
+        ...,
+        validation_alias=AliasChoices("order_index", "order"),
+    )
+    price_from_origin: Optional[float] = 0.0
     lat: Optional[float] = None
     lng: Optional[float] = None
     city_name: Optional[str] = None
-    location: Optional[str] = Field(default=None, validation_alias="location_name")
+    location: Optional[str] = Field(
+        default=None, validation_alias="location_name"
+    )
     address: Optional[str] = None
 
     model_config = ConfigDict(
@@ -108,30 +132,43 @@ class RideCreate(BaseModel):
 
     stopovers: List[StopoverIn] = Field(default_factory=list)
 
+    # Allow single 'start_date' or list of 'dates'
     dates: List[date] = Field(
-        ...,
-        min_length=1,
-        max_length=10,
+        default_factory=list, description="List of ride occurrence dates"
     )
+    start_date: Optional[date] = None
 
     pickup_time: time
+
     max_passengers: int = Field(..., ge=1)
     max_back_seat_passengers: Optional[int] = Field(
-        default=None,
-        ge=0,
-        le=3,
+        default=None, ge=0, le=3
     )
 
     instant_booking: bool = False
     price_per_seat: Decimal = Field(..., gt=0)
 
+    @model_validator(mode="before")
+    @classmethod
+    def populate_start_date_and_dates(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # 1. If 'start_date' passed instead of 'dates', create 'dates' list
+            if data.get("start_date") and not data.get("dates"):
+                data["dates"] = [data["start_date"]]
+            # 2. If 'dates' passed instead of 'start_date', populate 'start_date'
+            elif data.get("dates") and not data.get("start_date"):
+                sorted_dates = sorted(data["dates"])
+                data["start_date"] = sorted_dates[0]
+        return data
+
     @model_validator(mode="after")
     def validate_ride_constraints(self):
-        if len(set(self.dates)) != len(self.dates):
-            raise ValueError("Duplicate dates are not allowed.")
+        if not self.dates:
+            raise ValueError("At least one date or start_date must be provided.")
 
         if (
             self.max_back_seat_passengers is not None
+            and self.max_passengers is not None
             and self.max_back_seat_passengers > self.max_passengers
         ):
             raise ValueError(
@@ -155,7 +192,7 @@ class RideOut(RideBase):
     dropoff_lng: Optional[float] = None
 
     created_at: datetime
-    updated_at: Optional[datetime] = None  # Allows None
+    updated_at: Optional[datetime] = None
 
     stopovers: List[StopoverOut] = []
     occurrences: List[OccurrenceOut] = []

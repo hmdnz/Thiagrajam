@@ -64,23 +64,36 @@ class Ride(Base):
     pickup_time = Column(Time, nullable=False)
     price_per_seat = Column(Float, nullable=False)
     max_passengers = Column(Integer, nullable=False)
-
+    max_back_seat_passengers = Column(
+      Integer, nullable=True
+  )
+    instant_booking = Column(Boolean, default=False, nullable=False)
     is_recurring = Column(Boolean, default=False)
     recurrence_type = Column(Enum(RecurrenceType), nullable=True)
     custom_days = Column(ARRAY(Integer), nullable=True)
 
-    start_date = Column(Date, nullable=False)
+    start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
 
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    driver = relationship("User", back_populates="rides_driven")
-    car = relationship("Car", back_populates="rides")
-    stopovers = relationship("Stopover", back_populates="ride", cascade="all, delete-orphan", order_by="Stopover.order")
+    # driver = relationship("User", back_populates="rides_driven")
+    # car = relationship("app.cars.models.Car", back_populates="rides")
+    stopovers = relationship(
+        "Stopover",
+        back_populates="ride",
+        order_by="Stopover.order_index", # <-- Updated to 'order_index'
+    )
     occurrences = relationship("RideOccurrence", back_populates="ride", cascade="all, delete-orphan")
-    bookings = relationship("Booking", back_populates="ride")
+    # bookings = relationship("Booking", back_populates="ride")
+
+    # Inside class Ride(Base) in app/rides/models.py:
+
+    driver = relationship("app.models.User", back_populates="offered_rides")
+    car = relationship("app.cars.models.Car", back_populates="rides")
+    bookings = relationship("app.bookings.models.Booking", back_populates="ride", cascade="all, delete-orphan")
 
     # Composite index for search speed
     __table_args__ = (
@@ -103,7 +116,7 @@ class Stopover(Base):
 
     city_name = Column(String, nullable=False, index=True)
     address = Column(String, nullable=True)
-    order = Column(Integer, nullable=False)
+    order_index = Column(Integer, nullable=True, default = 0.0)
     price_from_origin = Column(Float, nullable=False)
 
     # Relationships
@@ -111,9 +124,8 @@ class Stopover(Base):
 
     # Composite index for stopover lookup
     __table_args__ = (
-        Index("ix_stopovers_ride_city_order", "ride_id", "city_name", "order"),
+        Index("ix_stopovers_ride_city_order", "ride_id", "city_name", "order_index"),
     )
-
 
 # ==========================================
 # RIDE OCCURRENCE MODEL

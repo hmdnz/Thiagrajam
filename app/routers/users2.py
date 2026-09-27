@@ -1,5 +1,8 @@
 """
-app/routers/users2.py
+app/routers/users.py
+
+API Endpoints for User management, Authentication, Profile Updates, 
+and Driver Profile sync.
 """
 
 import re
@@ -11,7 +14,6 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-# Absolute imports prevent router load failures during app startup
 from app import email_utils, models, oauth2, schemas, utils
 from app.database import get_db
 
@@ -42,13 +44,13 @@ def format_nigerian_phone(phone: str) -> str:
 
 
 # ============================================================
-# ENDPOINTS
+# AUTH & ACCOUNT MANAGEMENT
 # ============================================================
 
 @router.post(
     "/users",
     status_code=status.HTTP_201_CREATED,
-    response_model=schemas.UserOut,
+    response_model=schemas.UserCreateOut,
 )
 def create_user(
     user: schemas.UserCreate,
@@ -57,22 +59,13 @@ def create_user(
 ):
     """
     Registers a new user account.
-    
-    Business Rules:
-    - Every new user starts as a passenger.
-    - Phone numbers are standardized to 234 format.
-    - Sends verification email or KudiSMS OTP based on provided contact info.
     """
     hashed_password = utils.hash(user.password)
 
-    # Dump fields explicitly provided by payload
     user_dict = user.model_dump(exclude_unset=True)
     user_dict["password"] = hashed_password
-
-    # Strip computed properties if sent in payload
     user_dict.pop("profile_complete", None)
 
-    # Convert empty strings to None so unique constraints don't trigger collisions
     for key in ["email", "phone_number", "nin"]:
         if key in user_dict and isinstance(user_dict[key], str) and not user_dict[key].strip():
             user_dict[key] = None
@@ -80,12 +73,10 @@ def create_user(
     if user_dict.get("phone_number"):
         user_dict["phone_number"] = format_nigerian_phone(user_dict["phone_number"])
 
-    # Force default role to passenger
     user_dict["role"] = models.UserRoleEnum.passenger
 
     new_user = models.User(**user_dict)
     
-    # Initial status attributes
     new_user.is_active = False 
     new_user.is_verified = False
     new_user.nin_verified = False
@@ -103,7 +94,6 @@ def create_user(
             detail="Email, phone number, or unique identifier already exists.",
         )
 
-    # Dispatch Email Verification
     if new_user.email:
         verify_token = oauth2.create_email_verification_token(str(new_user.id))
         verify_link = f"{FRONTEND_URL}/verify-email?token={verify_token}"
@@ -114,7 +104,6 @@ def create_user(
             link=verify_link,
         )
 
-    # Dispatch SMS OTP Verification
     if new_user.phone_number:
         otp_result = utils.send_kudisms_otp(new_user.phone_number)
         if otp_result.get("success"):
@@ -123,7 +112,6 @@ def create_user(
         else:
             print(f"[OTP DISPATCH FAILED] user_id={new_user.id} error={otp_result.get('error')}")
 
-    # Generate immediate access token (cast UUID to str)
     new_user.access_token = oauth2.create_access_token(data={"user_id": str(new_user.id)})
     new_user.token_type = "bearer"
 
@@ -192,57 +180,6 @@ def resend_otp(request: schemas.ResendOTP, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "OTP resent successfully."}
-
-
-@router.get(
-    "/users",
-    status_code=status.HTTP_200_OK,
-    response_model=List[schemas.UserOut],
-)
-def get_all_users(db: Session = Depends(get_db)):
-    """Returns all registered users."""
-    return db.query(models.User).all()
-
-
-@router.get("/users/{id}", response_model=schemas.UserOut)
-def get_user(id: UUID, db: Session = Depends(get_db)):
-    """Fetches a single user by UUID."""
-    user = db.query(models.User).filter(models.User.id == id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {id} not found",
-        )
-    return user
-
-
-@router.delete("/users/{id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(
-    id: UUID,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(oauth2.get_current_user),
-):
-    """Deletes a user account by UUID with permissions check."""
-    user_query = db.query(models.User).filter(models.User.id == id)
-    user = user_query.first()
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {id} does not exist.",
-        )
-
-    is_admin = getattr(current_user, "is_admin", False) or getattr(current_user, "role", None) == "admin"
-    if user.id != current_user.id and not is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to perform requested action.",
-        )
-
-    user_query.delete(synchronize_session=False)
-    db.commit()
-
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/verify-email")
@@ -330,8 +267,9 @@ def reset_password(request: schemas.ResetPassword, db: Session = Depends(get_db)
     """Completes password reset using token."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or expired reset token",
+        detail="Invalid or expired password reset token.",
     )
+    
     user_id = oauth2.verify_reset_token(request.token, credentials_exception)
     user = db.query(models.User).filter(models.User.id == user_id).first()
 
@@ -341,4 +279,180 @@ def reset_password(request: schemas.ResetPassword, db: Session = Depends(get_db)
     user.password = utils.hash(request.new_password)
     db.commit()
 
-    return {"message": "Password has been reset successfully."}
+    return {"message": "Password updated successfully."}
+
+
+@router.post("/change-password")
+def change_password(
+    password_data: schemas.ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user),
+):
+    """Allows an authenticated user to change their password."""
+    if not utils.verify(password_data.current_password, current_user.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect current password.",
+        )
+
+    current_user.password = utils.hash(password_data.new_password)
+    db.commit()
+
+    return {"message": "Password changed successfully."}
+
+
+# ============================================================
+# PROFILE OPERATIONS
+# ============================================================
+
+@router.get("/profile/me", response_model=schemas.UserProfileOut)
+def get_current_user_profile(
+    current_user: models.User = Depends(oauth2.get_current_user),
+):
+    """Fetches full profile information for the currently authenticated user."""
+    return current_user
+
+
+@router.put("/profile/me", response_model=schemas.UserProfileUpdate)
+def update_profile(
+    profile_data: schemas.ProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user),
+):
+    """Updates profile attributes and syncs user & driver preferences safely."""
+    update_dict = profile_data.model_dump(exclude_unset=True)
+
+    # 1. Update User level attributes
+    user_fields = [
+        "full_name", "address", "date_of_birth", "gender", "phone_number",
+        "next_of_kin_name", "next_of_kin_relationship", "emergency_contact",
+        "blood_group", "health_conditions", "nin"
+    ]
+    for field in user_fields:
+        if field in update_dict:
+            setattr(current_user, field, update_dict[field])
+
+    # 2. Sync User level preference fields
+    if "chattiness" in update_dict:
+        current_user.chattiness = update_dict["chattiness"]
+    if "music" in update_dict:
+        current_user.music_preference = update_dict["music"]
+    if "smoking" in update_dict:
+        current_user.smoking_preference = update_dict["smoking"]
+    if "pets" in update_dict:
+        current_user.pets_preference = update_dict["pets"]
+
+    # 3. Sync DriverProfile preference fields if a driver profile exists
+    if current_user.driver_profile:
+        driver = current_user.driver_profile
+        if "about_me" in update_dict:
+            driver.about_me = update_dict["about_me"]
+        if "chattiness" in update_dict:
+            driver.chattiness = update_dict["chattiness"]
+        if "music" in update_dict:
+            driver.music = update_dict["music"]
+        if "smoking" in update_dict:
+            driver.smoking = update_dict["smoking"]
+        if "pets" in update_dict:
+            driver.pets = update_dict["pets"]
+
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+# ============================================================
+# DRIVER SPECIFIC ENDPOINTS
+# ============================================================
+
+@router.put("/driver/preferences", response_model=schemas.DriverPreferencesResponse)
+def update_driver_preferences(
+    preferences: schemas.DriverProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user),
+):
+    """Dedicated endpoint to update driver preferences."""
+    driver = current_user.driver_profile
+    if not driver:
+        driver = models.DriverProfile(user_id=current_user.id)
+        db.add(driver)
+
+    update_dict = preferences.model_dump(exclude_unset=True)
+
+    if "chattiness" in update_dict:
+        driver.chattiness = update_dict["chattiness"]
+        current_user.chattiness = update_dict["chattiness"]
+    if "music" in update_dict:
+        driver.music = update_dict["music"]
+        current_user.music_preference = update_dict["music"]
+    if "smoking" in update_dict:
+        driver.smoking = update_dict["smoking"]
+        current_user.smoking_preference = update_dict["smoking"]
+    if "pets" in update_dict:
+        driver.pets = update_dict["pets"]
+        current_user.pets_preference = update_dict["pets"]
+    if "license_number" in update_dict:
+        driver.license_number = update_dict["license_number"]
+    if "license_expiry_date" in update_dict:
+        driver.license_expiry_date = update_dict["license_expiry_date"]
+    if "about_me" in update_dict:
+        driver.about_me = update_dict["about_me"]
+
+    db.commit()
+    db.refresh(driver)
+    return driver
+
+
+# ============================================================
+# GENERAL USER CRUD
+# ============================================================
+
+@router.get(
+    "/users",
+    status_code=status.HTTP_200_OK,
+    response_model=List[schemas.UserOut],
+)
+def get_all_users(db: Session = Depends(get_db)):
+    """Returns all registered users."""
+    return db.query(models.User).all()
+
+
+@router.get("/users/{id}", response_model=schemas.UserOut)
+def get_user(id: UUID, db: Session = Depends(get_db)):
+    """Fetches a single user by UUID."""
+    user = db.query(models.User).filter(models.User.id == id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {id} not found",
+        )
+    return user
+
+
+@router.delete("/users/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user),
+):
+    """Deletes a user account by UUID with permissions check."""
+    user_query = db.query(models.User).filter(models.User.id == id)
+    user = user_query.first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {id} does not exist.",
+        )
+
+    is_admin = getattr(current_user, "is_admin", False) or getattr(current_user, "role", None) == "admin"
+    if user.id != current_user.id and not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to perform requested action.",
+        )
+
+    user_query.delete(synchronize_session=False)
+    db.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
