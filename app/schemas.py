@@ -9,7 +9,7 @@ from datetime import date, datetime
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.models import (
     BloodGroupEnum,
@@ -143,11 +143,18 @@ class UserBase(BaseModel):
 
 
 class UserCreate(BaseModel):
-    phone_number: str
-    password: str = Field(..., min_length=6)
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = None
+    password: str
     role: str = "passenger"
 
+    @model_validator(mode="after")
+    def check_at_least_one_identifier(self) -> "UserCreate":
+        if not self.email and not self.phone_number:
+            raise ValueError(
+                "At least one contact method (email or phone_number) must be provided."
+            )
+        return self
 
 class UserProfileUpdate(BaseModel):
     """
