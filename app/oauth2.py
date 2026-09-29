@@ -190,7 +190,7 @@ def get_current_admin(
 def get_current_super_admin(
     # Explicitly bind token to admin_oauth2_scheme so OpenAPI extracts the scheme metadata
     token: str = Depends(admin_oauth2_scheme),
-    current_admin: admin_models.Admin = Depends(get_current_admin)
+    current_admin: admin_models.AdminUser = Depends(get_current_admin)
 ):
     """Only allows access to active Super Admins."""
     if not current_admin.is_super_admin:

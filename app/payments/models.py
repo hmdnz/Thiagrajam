@@ -419,3 +419,4 @@ class Wallet(Base):
   )
 
   user = relationship("app.models.User", backref="wallet", uselist=False)
+ 

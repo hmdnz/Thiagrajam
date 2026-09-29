@@ -140,7 +140,7 @@ class RideCreate(BaseModel):
 
     pickup_time: time
 
-    max_passengers: int = Field(..., ge=1)
+    max_passengers: int = Field(..., ge=4)
     max_back_seat_passengers: Optional[int] = Field(
         default=None, ge=0, le=3
     )

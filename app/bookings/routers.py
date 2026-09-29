@@ -1,225 +1,72 @@
 """
-app/bookings/routers.py
+app/bookings/routers.py — FULL RECONCILED BOOKING ROUTER
 """
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    status,
-)
+from datetime import datetime, timezone
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
-from app import models, oauth2
 from app.database import get_db
-from app.bookings import (
-    models as booking_models,
-    schemas as booking_schemas,
-)
+from app import oauth2, models as user_models
 from app.rides import models as ride_models
+from app.bookings import models as booking_models, schemas as booking_schemas
 
-
-router = APIRouter(
-    prefix="/bookings",
-    tags=["Bookings"],
-)
+router = APIRouter(prefix="/bookings", tags=["Bookings Module"])
 
 
 # ============================================================
-# ADMIN: ALL BOOKINGS
-# GET /bookings/all
-# ============================================================
-
-@router.get(
-    "/all",
-    response_model=List[booking_schemas.BookingOut],
-)
-def get_all_bookings(
-    status_filter: Optional[booking_models.BookingStatusEnum] = None,
-    ride_id: Optional[int] = None,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(
-        oauth2.get_current_user
-    ),
-):
-    """
-    Admin-only: returns every booking in the system, optionally
-    filtered by status and/or ride_id.
-
-    GET /bookings/all
-    GET /bookings/all?status_filter=pending
-    GET /bookings/all?ride_id=7
-    """
-
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required.",
-        )
-
-    query = db.query(booking_models.Booking)
-
-    if status_filter is not None:
-        query = query.filter(
-            booking_models.Booking.status == status_filter
-        )
-
-    if ride_id is not None:
-        query = query.filter(
-            booking_models.Booking.ride_id == ride_id
-        )
-
-    return query.order_by(
-        booking_models.Booking.created_at.desc()
-    ).all()
-
-
-# ============================================================
-# CREATE BOOKING
+# 1. CREATE BOOKING (PASSENGER)
 # POST /bookings/
 # ============================================================
-
-@router.post(
-    "/",
-    response_model=booking_schemas.BookingOut,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("/", response_model=booking_schemas.BookingOut, status_code=status.HTTP_201_CREATED)
 def create_booking(
-    booking: booking_schemas.BookingCreate,
+    booking_in: booking_schemas.BookingCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(
-        oauth2.get_current_user
-    ),
+    current_user: user_models.User = Depends(oauth2.get_current_user)
 ):
     """
-    Creates a passenger booking against a published ride.
-
-    A user can only book when:
-    - profile is complete
-    - NIN is verified
-    (current_user.can_book_rides — unchanged from before)
-
-    Users can still search and view rides without a
-    verified NIN.
+    Passenger requests a booking for a specific ride and date.
+    Calculates total fare server-side and enforces seat limits.
     """
-
-    # ========================================================
-    # BOOKING ELIGIBILITY
-    # ========================================================
-
-    if not current_user.can_book_rides:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "You cannot book a ride until your profile "
-                "is complete and your NIN has been verified."
-            ),
-        )
-
-    # ========================================================
-    # RIDE MUST EXIST AND BE ACTIVE
-    # ========================================================
-
-    ride = (
-        db.query(ride_models.Ride)
-        .filter(
-            ride_models.Ride.id == booking.ride_id,
-            ride_models.Ride.is_active.is_(True),
-        )
-        .first()
-    )
-
+    ride = db.query(ride_models.Ride).filter(ride_models.Ride.id == booking_in.ride_id).first()
     if not ride:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Ride not found or no longer active.",
+            detail="Requested ride not found."
         )
 
-    # ========================================================
-    # RIDE MUST RUN ON THE REQUESTED DATE
-    # ========================================================
+    # Check available seats for the specified travel date
+    active_bookings = db.query(booking_models.Booking).filter(
+        booking_models.Booking.ride_id == booking_in.ride_id,
+        booking_models.Booking.travel_date == booking_in.travel_date,
+        booking_models.Booking.status.in_([
+            booking_models.BookingStatusEnum.PENDING,
+            booking_models.BookingStatusEnum.CONFIRMED,
+            booking_models.BookingStatusEnum.TRIP_STARTED
+        ])
+    ).all()
 
-    occurrence_exists = (
-        db.query(ride_models.RideOccurrence)
-        .filter(
-            ride_models.RideOccurrence.ride_id == ride.id,
-            ride_models.RideOccurrence.date == booking.ride_date,
-        )
-        .first()
-    )
+    seats_taken = sum(b.seats_booked for b in active_bookings)
+    available_seats = ride.seats_available - seats_taken
 
-    if not occurrence_exists:
+    if booking_in.seats_booked > available_seats:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This ride does not run on the selected date.",
+            detail=f"Only {available_seats} seat(s) available for {booking_in.travel_date}."
         )
 
-    # ========================================================
-    # SEAT AVAILABILITY
-    # ========================================================
-
-    already_booked = (
-        db.query(booking_models.Booking)
-        .filter(
-            booking_models.Booking.ride_id == ride.id,
-            booking_models.Booking.ride_date == booking.ride_date,
-            booking_models.Booking.status.in_(
-                [
-                    booking_models.BookingStatusEnum.pending,
-                    booking_models.BookingStatusEnum.confirmed,
-                ]
-            ),
-        )
-        .all()
-    )
-
-    seats_taken = sum(b.seats_booked for b in already_booked)
-    seats_remaining = ride.max_passengers - seats_taken
-
-    if booking.seats_booked > seats_remaining:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Only {seats_remaining} seat(s) left on "
-                "this ride for the selected date."
-            ),
-        )
-
-    # ========================================================
-    # BACK-SEAT LIMIT
-    # Not tracked as a separate seat type yet — this is a
-    # placeholder for when the frontend distinguishes front
-    # vs. back seat bookings.
-    # ========================================================
-
-    # (No enforcement here yet — flagging in case the
-    # frontend needs "front/back" seat selection added to
-    # BookingCreate before this can be checked properly.)
-
-    # ========================================================
-    # FARE — computed server-side, never trusted from client
-    # ========================================================
-
-    fare = ride.price_per_seat * booking.seats_booked
-
-    # ========================================================
-    # INSTANT BOOKING VS. PENDING REVIEW
-    # ========================================================
-
-    initial_status = (
-        booking_models.BookingStatusEnum.confirmed
-        if ride.instant_booking
-        else booking_models.BookingStatusEnum.pending
-    )
+    # Server-side fare computation
+    total_fare = ride.price_per_seat * booking_in.seats_booked
 
     new_booking = booking_models.Booking(
         passenger_id=current_user.id,
         ride_id=ride.id,
-        ride_date=booking.ride_date,
-        seats_booked=booking.seats_booked,
-        fare=fare,
-        status=initial_status,
+        car_id=ride.car_id,
+        travel_date=booking_in.travel_date,
+        seats_booked=booking_in.seats_booked,
+        fare=total_fare,
+        status=booking_models.BookingStatusEnum.PENDING
     )
 
     db.add(new_booking)
@@ -230,25 +77,162 @@ def create_booking(
 
 
 # ============================================================
-# MY BOOKINGS
+# 2. GET PASSENGER BOOKINGS
 # GET /bookings/my-bookings
 # ============================================================
-
-@router.get(
-    "/my-bookings",
-    response_model=List[booking_schemas.BookingOut],
-)
-def get_user_bookings(
+@router.get("/my-bookings", response_model=List[booking_schemas.BookingOut])
+def get_my_bookings(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(
-        oauth2.get_current_user
-    ),
+    current_user: user_models.User = Depends(oauth2.get_current_user)
 ):
-    return (
-        db.query(booking_models.Booking)
-        .filter(
-            booking_models.Booking.passenger_id
-            == current_user.id
+    """Retrieves all bookings made by the currently logged-in passenger."""
+    return db.query(booking_models.Booking).filter(
+        booking_models.Booking.passenger_id == current_user.id
+    ).order_by(booking_models.Booking.created_at.desc()).all()
+
+
+# ============================================================
+# 3. DRIVER CONFIRM BOOKING
+# POST /bookings/{id}/confirm
+# ============================================================
+@router.post("/{booking_id}/confirm", response_model=booking_schemas.BookingOut)
+def confirm_booking(
+    booking_id: int,
+    payload: booking_schemas.BookingDriverConfirm = booking_schemas.BookingDriverConfirm(),
+    db: Session = Depends(get_db),
+    current_user: user_models.User = Depends(oauth2.get_current_user)
+):
+    """Driver accepts/confirms a pending booking request."""
+    booking = db.query(booking_models.Booking).filter(booking_models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found.")
+
+    # Verify current user is the driver for this ride
+    if booking.ride.driver_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the assigned driver can confirm this booking."
         )
-        .all()
-    )
+
+    if booking.status != booking_models.BookingStatusEnum.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot confirm booking with current status: {booking.status.value}."
+        )
+
+    booking.status = booking_models.BookingStatusEnum.CONFIRMED
+    booking.driver_confirmed_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(booking)
+
+    return booking
+
+
+# ============================================================
+# 4. START TRIP (DRIVER)
+# POST /bookings/{id}/start-trip
+# ============================================================
+@router.post("/{booking_id}/start-trip", response_model=booking_schemas.BookingOut)
+def start_trip(
+    booking_id: int,
+    payload: booking_schemas.BookingTripAction = booking_schemas.BookingTripAction(),
+    db: Session = Depends(get_db),
+    current_user: user_models.User = Depends(oauth2.get_current_user)
+):
+    """Driver marks the trip as started."""
+    booking = db.query(booking_models.Booking).filter(booking_models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found.")
+
+    if booking.ride.driver_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the assigned driver can start this trip."
+        )
+
+    if booking.status != booking_models.BookingStatusEnum.CONFIRMED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Booking must be CONFIRMED before starting trip."
+        )
+
+    booking.status = booking_models.BookingStatusEnum.TRIP_STARTED
+    booking.trip_started_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(booking)
+
+    return booking
+
+
+# ============================================================
+# 5. COMPLETE TRIP (DRIVER)
+# POST /bookings/{id}/complete-trip
+# ============================================================
+@router.post("/{booking_id}/complete-trip", response_model=booking_schemas.BookingOut)
+def complete_trip(
+    booking_id: int,
+    payload: booking_schemas.BookingTripAction = booking_schemas.BookingTripAction(),
+    db: Session = Depends(get_db),
+    current_user: user_models.User = Depends(oauth2.get_current_user)
+):
+    """Driver marks the trip as completed."""
+    booking = db.query(booking_models.Booking).filter(booking_models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found.")
+
+    if booking.ride.driver_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the assigned driver can complete this trip."
+        )
+
+    if booking.status != booking_models.BookingStatusEnum.TRIP_STARTED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Trip must be in TRIP_STARTED status before completion."
+        )
+
+    booking.status = booking_models.BookingStatusEnum.TRIP_COMPLETED
+    booking.trip_completed_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(booking)
+
+    return booking
+
+
+# ============================================================
+# 6. CANCEL BOOKING (PASSENGER)
+# POST /bookings/{id}/cancel
+# ============================================================
+@router.post("/{booking_id}/cancel", response_model=booking_schemas.BookingOut)
+def cancel_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    current_user: user_models.User = Depends(oauth2.get_current_user)
+):
+    """Passenger cancels a pending or confirmed booking."""
+    booking = db.query(booking_models.Booking).filter(booking_models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found.")
+
+    if booking.passenger_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only cancel your own bookings."
+        )
+
+    if booking.status in [booking_models.BookingStatusEnum.TRIP_STARTED, booking_models.BookingStatusEnum.TRIP_COMPLETED]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot cancel a trip that has already started or completed."
+        )
+
+    booking.status = booking_models.BookingStatusEnum.CANCELLED
+
+    db.commit()
+    db.refresh(booking)
+
+    return booking

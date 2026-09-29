@@ -30,9 +30,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 #     normalized = normalize_phone_number(phone)
 #     return normalized.lstrip("+")
 
-
-
-
 def normalize_phone_number(phone: str, country_code: str = "234") -> str:
     """
     Normalizes any Nigerian phone number format to a local 11-digit number (09036365622).
