@@ -12,15 +12,13 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
-
-
 class BookingStatusEnum(str, enum.Enum):
-    PENDING = "PENDING"
-    CONFIRMED = "CONFIRMED"
-    TRIP_STARTED = "TRIP_STARTED"
-    TRIP_COMPLETED = "TRIP_COMPLETED"
-    CANCELLED = "CANCELLED"
-    REFUNDED = "REFUNDED"
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    TRIP_STARTED = "trip_started"
+    TRIP_COMPLETED = "trip_completed"  # Fixed copy-paste value
+    CANCELLED = "cancelled"
+    REFUNDED = "refunded"
 
 
 class Booking(Base):
@@ -31,12 +29,20 @@ class Booking(Base):
     ride_id = Column(Integer, ForeignKey("rides.id"), nullable=False)
     car_id = Column(Integer, ForeignKey("cars.id"), nullable=True)
 
-    # Harmonized field name
     travel_date = Column(Date, nullable=False)
-    
     seats_booked = Column(Integer, default=1, nullable=False)
     fare = Column(Numeric(10, 2), nullable=False)
-    status = Column(SQLEnum(BookingStatusEnum), default=BookingStatusEnum.PENDING, nullable=False)
+
+    # Added values_callable so SQLAlchemy sends 'pending' instead of 'PENDING'
+    status = Column(
+        SQLEnum(
+            BookingStatusEnum,
+            name="bookingstatusenum",
+            values_callable=lambda x: [e.value for e in x]
+        ),
+        default=BookingStatusEnum.PENDING,
+        nullable=False
+    )
 
     driver_confirmed_at = Column(DateTime(timezone=True), nullable=True)
     trip_started_at = Column(DateTime(timezone=True), nullable=True)
@@ -50,5 +56,4 @@ class Booking(Base):
     ride = relationship("Ride", back_populates="bookings")
     car = relationship("app.cars.models.Car", back_populates="bookings")
     payments = relationship("Payment", back_populates="booking")
-
 

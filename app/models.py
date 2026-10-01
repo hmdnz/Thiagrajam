@@ -152,6 +152,7 @@ class User(Base):
 
     is_driver = Column(Boolean, default=False, nullable=False)
     can_offer_rides = Column(Boolean, default=False, nullable=False)
+    can_book_rides = Column(Boolean, default=True, nullable=False)
 
     nin = Column(String, unique=True, nullable=True)
     nin_verified = Column(Boolean, default=False, nullable=False)
@@ -276,94 +277,3 @@ class DriverProfile(Base):
         ]
         return all(f is not None and f != "" for f in required)
 
-
-# class Ride(Base):
-#     __tablename__ = "rides"
-#     __table_args__ = {"extend_existing": True}
-
-#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-#     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-
-#     origin = Column(String, nullable=False)
-#     destination = Column(String, nullable=False)
-#     departure_time = Column(DateTime(timezone=True), nullable=False)
-#     available_seats = Column(Integer, nullable=False)
-#     price_per_seat = Column(Numeric(10, 2), nullable=False)
-
-#     origin_latitude = Column(Float, nullable=True)
-#     origin_longitude = Column(Float, nullable=True)
-#     destination_latitude = Column(Float, nullable=True)
-#     destination_longitude = Column(Float, nullable=True)
-
-#     status = Column(SQLEnum(RideStatusEnum), default=RideStatusEnum.scheduled, nullable=False)
-#     notes = Column(Text, nullable=True)
-
-#     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-#     updated_at = Column(
-#         DateTime(timezone=True),
-#         server_default=func.now(),
-#         onupdate=func.now(),
-#         nullable=False,
-#     )
-
-#     driver = relationship("User", back_populates="offered_rides")
-#     bookings = relationship("Booking", back_populates="ride", cascade="all, delete-orphan")
-
-
-# class Booking(Base):
-#     __tablename__ = "bookings"
-#     __table_args__ = {"extend_existing": True}
-
-#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-#     ride_id = Column(UUID(as_uuid=True), ForeignKey("rides.id", ondelete="CASCADE"), nullable=False)
-#     passenger_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-
-#     seats_booked = Column(Integer, default=1, nullable=False)
-#     total_price = Column(Numeric(10, 2), nullable=False)
-#     status = Column(SQLEnum(BookingStatusEnum), default=BookingStatusEnum.pending, nullable=False)
-
-#     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-#     updated_at = Column(
-#         DateTime(timezone=True),
-#         server_default=func.now(),
-#         onupdate=func.now(),
-#         nullable=False,
-#     )
-
-#     ride = relationship("Ride", back_populates="bookings")
-#     passenger = relationship("User", back_populates="bookings")
-#     payment = relationship("Payment", back_populates="booking", uselist=False, cascade="all, delete-orphan")
-
-
-# class Payment(Base):
-#     __tablename__ = "payments"
-#     __table_args__ = {"extend_existing": True}
-
-#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-#     booking_id = Column(UUID(as_uuid=True), ForeignKey("bookings.id", ondelete="CASCADE"), unique=True, nullable=False)
-
-#     amount = Column(Numeric(10, 2), nullable=False)
-#     transaction_reference = Column(String, unique=True, nullable=False)
-#     status = Column(SQLEnum(PaymentStatusEnum), default=PaymentStatusEnum.pending, nullable=False)
-#     payment_method = Column(String, nullable=True)
-
-#     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-#     booking = relationship("Booking", back_populates="payment")
-
-
-# class Review(Base):
-#     __tablename__ = "reviews"
-#     __table_args__ = {"extend_existing": True}
-
-#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-#     reviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-#     reviewee_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-
-#     rating = Column(Integer, nullable=False)
-#     comment = Column(Text, nullable=True)
-
-#     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-#     reviewer = relationship("User", foreign_keys=[reviewer_id], back_populates="reviews_given")
-#     reviewee = relationship("User", foreign_keys=[reviewee_id], back_populates="reviews_received")

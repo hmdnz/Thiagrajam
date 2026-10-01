@@ -182,7 +182,7 @@ async def initialize_booking_payment(
     if not booking:
         raise HTTPException(404, "Booking not found.")
 
-    if booking.status == booking_models.BookingStatusEnum.cancelled:
+    if booking.status == booking_models.BookingStatusEnum.CANCELLED:
         raise HTTPException(400, "Cannot pay for a cancelled booking.")
 
     # Block double-charge
@@ -233,6 +233,19 @@ async def initialize_booking_payment(
         db.flush()
 
     try:
+        # if provider == payment_models.PaymentProviderEnum.squad:
+        #     resp = await utils.squad_initialize_payment(
+        #         email=user.email,
+        #         amount_kobo=amount_kobo,
+        #         transaction_ref=payment.transaction_ref,
+        #         callback_url=callback_url,
+        #     )
+        #     data = resp.get("data") or {}
+        #     payment.auth_url = data.get("auth_url")
+        #     payment.provider_ref = (
+        #         data.get("transaction_ref") or payment.transaction_ref
+        #     )
+
         if provider == payment_models.PaymentProviderEnum.squad:
             resp = await utils.squad_initialize_payment(
                 email=user.email,
@@ -240,11 +253,24 @@ async def initialize_booking_payment(
                 transaction_ref=payment.transaction_ref,
                 callback_url=callback_url,
             )
-            data = resp.get("data") or {}
-            payment.auth_url = data.get("auth_url")
-            payment.provider_ref = (
-                data.get("transaction_ref") or payment.transaction_ref
-            )
+            # Inspect the exact dictionary returned by utils in terminal logs
+            logger.info("SQUAD RESPONSE STRUCTURE: %s", resp)
+
+            # Handle both wrapped {'data': {...}} and unwrapped dicts safely
+            data = resp.get("data") if isinstance(resp, dict) and "data" in resp else resp
+
+            if isinstance(data, dict):
+                payment.auth_url = (
+                    data.get("checkout_url") 
+                    or data.get("auth_url") 
+                    or resp.get("checkout_url")
+                )
+                payment.provider_ref = (
+                    data.get("transaction_ref") 
+                    or resp.get("transaction_ref") 
+                    or payment.transaction_ref
+                )
+
         else:
             resp = await utils.paystack_initialize_payment(
                 email=user.email,

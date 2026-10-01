@@ -48,7 +48,7 @@ def create_booking(
     ).all()
 
     seats_taken = sum(b.seats_booked for b in active_bookings)
-    available_seats = ride.seats_available - seats_taken
+    available_seats = ride.max_passengers - seats_taken
 
     if booking_in.seats_booked > available_seats:
         raise HTTPException(

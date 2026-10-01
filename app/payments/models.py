@@ -1,6 +1,6 @@
 """app/payments/models.py"""
-
 import enum
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
     Integer,
@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     Enum,
     TIMESTAMP,
+    DateTime,
     Numeric,
     Date,
     Text,
