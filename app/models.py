@@ -181,25 +181,31 @@ class User(Base):
     )
 
     @property
-    def profile_complete(self) -> bool:
-        required_fields = [
-            self.email,
-            self.phone_number,
-            self.full_name,
-            self.address,
-            self.date_of_birth,
-            self.gender,
-            self.blood_group,
-            self.health_conditions,
-            self.nin,
-            self.photo_url,
-        ]
+def profile_complete(self) -> bool:
+    # User must have at least one contact method:
+    # either email OR phone number.
+    has_contact = bool(
+        (self.email and self.email.strip())
+        or
+        (self.phone_number and self.phone_number.strip())
+    )
 
-        return all(
-            field is not None and str(field).strip() != ""
-            for field in required_fields
-        )
+    # These fields are required to complete the profile.
+    required_fields = [
+        self.full_name,
+        self.address,
+        self.date_of_birth,
+        self.gender,
+        self.blood_group,
+        self.health_conditions,
+        self.nin,
+        self.photo_url,
+    ]
 
+    return has_contact and all(
+        field is not None and str(field).strip() != ""
+        for field in required_fields
+    )
     # Relationships
     driver_profile = relationship("DriverProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     offered_rides = relationship(
