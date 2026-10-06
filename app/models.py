@@ -148,11 +148,18 @@ class User(Base):
     is_active = Column(Boolean, default=False, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
+    # Passenger suspension: blocks booking/paying for rides.
     is_suspended = Column(Boolean, default=False, nullable=False)
+    suspension_reason = Column(Text, nullable=True)
+    suspended_at = Column(DateTime(timezone=True), nullable=True)
+    # Driver suspension: blocks publishing rides. Independent of the above.
+    is_driver_suspended = Column(Boolean, default=False, nullable=False)
+    driver_suspension_reason = Column(Text, nullable=True)
+    driver_suspended_at = Column(DateTime(timezone=True), nullable=True)
 
     is_driver = Column(Boolean, default=False, nullable=False)
     can_offer_rides = Column(Boolean, default=False, nullable=False)
-    can_book_rides = Column(Boolean, default=True, nullable=False)
+    can_book_rides = Column(Boolean, default=False, nullable=False)
 
     nin = Column(String, unique=True, nullable=True)
     nin_verified = Column(Boolean, default=False, nullable=False)

@@ -11,10 +11,12 @@ from psycopg2.extras import RealDictCursor
 from . import models, auth
 import time
 import os
-from .routers import post, profile, users, users2, admin
+from .routers import post, profile, users2, admin
 from .database import engine, get_db, Base
 from sqlalchemy.orm import Session
 from app.admin import routers as admin_router
+from app.admin import verification as admin_verification
+from app.admin import suspensions as admin_suspensions
 from app.cars import routers as cars_router
 from app.bookings import routers as bookings_router
 from app.rides import routers as rides_router
@@ -121,6 +123,8 @@ app.include_router(rides_router.router)
 app.include_router(cars_router.router)
 app.include_router(payment_routers.router)
 app.include_router(admin_router.router)
+app.include_router(admin_verification.router)
+app.include_router(admin_suspensions.router)
 
 @app.get("/health", tags=["System"])
 def health_check(db: Session = Depends(get_db)):

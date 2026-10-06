@@ -166,6 +166,7 @@ class UserProfileUpdate(BaseModel):
     date_of_birth: Optional[date] = None
     gender: Optional[GenderEnum] = None
     phone_number: Optional[str] = None
+    email: Optional[EmailStr] = None
     next_of_kin_name: Optional[str] = None
     next_of_kin_relationship: Optional[str] = None
     emergency_contact: Optional[str] = None
@@ -191,6 +192,7 @@ class UserProfileUpdate(BaseModel):
                 "date_of_birth": "2026-09-26",
                 "gender": "male",
                 "phone_number": "09012121314",
+                "email": "johndoe@example.com",
                 "next_of_kin_name": "Mrs String",
                 "next_of_kin_relationship": "spouse",
                 "emergency_contact": "2345678987654",

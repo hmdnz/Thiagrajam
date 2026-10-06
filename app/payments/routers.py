@@ -216,6 +216,11 @@ async def initialize_payment(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
 ):
+    if current_user.is_suspended:
+        raise HTTPException(
+            403, "Your account is suspended. You cannot book or pay for rides."
+        )
+
     if not current_user.can_book_rides:
         raise HTTPException(
             403, "Profile complete and verified NIN required to pay."

@@ -3,7 +3,7 @@ app/cars/models.py
 """ 
 
 from datetime import datetime
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -33,6 +33,11 @@ class Car(Base):
     smoking_allowed = Column(Boolean, default=False)
     pets_allowed = Column(Boolean, default=False)
     wheelchair_accessible = Column(Boolean, default=False)
+
+    # Admin suspension: a suspended car cannot be used to publish rides.
+    is_suspended = Column(Boolean, default=False, nullable=False)
+    suspension_reason = Column(Text, nullable=True)
+    suspended_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False

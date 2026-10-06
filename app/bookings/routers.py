@@ -29,11 +29,30 @@ def create_booking(
     Passenger requests a booking for a specific ride and date.
     Calculates total fare server-side and enforces seat limits.
     """
+    if current_user.is_suspended:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is suspended. You cannot book rides."
+        )
+
+    if not current_user.can_book_rides:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your photograph and NIN must be verified by an admin before you can book rides."
+        )
+
     ride = db.query(ride_models.Ride).filter(ride_models.Ride.id == booking_in.ride_id).first()
     if not ride:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Requested ride not found."
+        )
+
+    # A ride whose driver or car has been suspended cannot be booked.
+    if ride.driver.is_driver_suspended or (ride.car and ride.car.is_suspended):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This ride is currently unavailable."
         )
 
     # Check available seats for the specified travel date

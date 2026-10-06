@@ -172,6 +172,12 @@ def publish_ride(
     licence.
     """
 
+    if current_user.is_driver_suspended:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your driver account is suspended. You cannot publish rides.",
+        )
+
     if not current_user.can_offer_rides:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -195,6 +201,12 @@ def publish_ride(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Car not found or does not belong to you.",
+        )
+
+    if car.is_suspended:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This car is suspended and cannot be used to publish rides.",
         )
 
     try:
@@ -275,6 +287,14 @@ def search_rides(
             car_models.Car.id == ride_models.Ride.car_id,
         )
         .filter(ride_models.Ride.is_active.is_(True))
+        .filter(car_models.Car.is_suspended.is_(False))
+        .filter(
+            ~ride_models.Ride.driver_id.in_(
+                db.query(models.User.id).filter(
+                    models.User.is_driver_suspended.is_(True)
+                )
+            )
+        )
     )
 
     if from_location:
