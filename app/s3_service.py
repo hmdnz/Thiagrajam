@@ -10,14 +10,21 @@ from .config import settings
 
 
 # ============================================================
-# AWS S3 CLIENT
+# AWS S3 CLIENT CONFIGURATION (REQUIRED FOR AF-SOUTH-1)
 # ============================================================
+
+s3_config = Config(
+    region_name=settings.AWS_REGION,
+    signature_version="s3v4",
+    s3={"addressing_style": "virtual"},
+)
 
 s3_client = boto3.client(
     "s3",
     region_name=settings.AWS_REGION,
     aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
     aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+    config=s3_config,
 )
 
 
@@ -32,9 +39,7 @@ ALLOWED_IMAGE_TYPES = {
 }
 
 MAX_FILE_SIZE_MB = 5
-MAX_FILE_SIZE_BYTES = (
-    MAX_FILE_SIZE_MB * 1024 * 1024
-)
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 
 # ============================================================
@@ -97,9 +102,7 @@ def upload_profile_image(
         content_type=content_type,
     )
 
-    extension = ALLOWED_IMAGE_TYPES[
-        content_type
-    ]
+    extension = ALLOWED_IMAGE_TYPES[content_type]
 
     filename = (
         f"{uuid.uuid4().hex}"
@@ -111,7 +114,6 @@ def upload_profile_image(
     )
 
     try:
-
         s3_client.put_object(
             Bucket=settings.AWS_S3_BUCKET,
             Key=s3_key,
@@ -120,7 +122,6 @@ def upload_profile_image(
         )
 
     except ClientError as error:
-
         raise RuntimeError(
             f"Failed to upload profile image to S3: {error}"
         )
@@ -154,9 +155,7 @@ def upload_driver_license_image(
         content_type=content_type,
     )
 
-    extension = ALLOWED_IMAGE_TYPES[
-        content_type
-    ]
+    extension = ALLOWED_IMAGE_TYPES[content_type]
 
     filename = (
         f"{uuid.uuid4().hex}"
@@ -168,7 +167,6 @@ def upload_driver_license_image(
     )
 
     try:
-
         s3_client.put_object(
             Bucket=settings.AWS_S3_BUCKET,
             Key=s3_key,
@@ -177,7 +175,6 @@ def upload_driver_license_image(
         )
 
     except ClientError as error:
-
         raise RuntimeError(
             f"Failed to upload driver licence image to S3: {error}"
         )
@@ -213,9 +210,7 @@ def upload_car_photo(
         content_type=content_type,
     )
 
-    extension = ALLOWED_IMAGE_TYPES[
-        content_type
-    ]
+    extension = ALLOWED_IMAGE_TYPES[content_type]
 
     filename = (
         f"{uuid.uuid4().hex}"
@@ -227,7 +222,6 @@ def upload_car_photo(
     )
 
     try:
-
         s3_client.put_object(
             Bucket=settings.AWS_S3_BUCKET,
             Key=s3_key,
@@ -236,13 +230,11 @@ def upload_car_photo(
         )
 
     except ClientError as error:
-
         raise RuntimeError(
             f"Failed to upload car photo to S3: {error}"
         )
 
     return s3_key
-
 
 
 # ============================================================
@@ -264,7 +256,6 @@ def delete_file_from_s3(
         return
 
     try:
-
         s3_client.delete_object(
             Bucket=settings.AWS_S3_BUCKET,
             Key=s3_key,
@@ -284,17 +275,15 @@ def generate_presigned_url(
 ) -> str:
     """
     Generates a temporary URL for accessing a private
-    S3 object.
+    S3 object with explicit opt-in regional addressing
+    (required for af-south-1).
     """
 
     if not s3_key:
-        raise ValueError(
-            "S3 file key is required."
-        )
+        return ""
 
     try:
-
-        return s3_client.generate_presigned_url(
+        url = s3_client.generate_presigned_url(
             ClientMethod="get_object",
             Params={
                 "Bucket": settings.AWS_S3_BUCKET,
@@ -303,8 +292,14 @@ def generate_presigned_url(
             ExpiresIn=expires_in,
         )
 
-    except ClientError as error:
+        # Force insertion of .af-south-1 into the hostname if boto3 drops it
+        regional_domain = f"s3.{settings.AWS_REGION}.amazonaws.com"
+        if "s3.amazonaws.com" in url and regional_domain not in url:
+            url = url.replace("s3.amazonaws.com", regional_domain)
 
+        return url
+
+    except ClientError as error:
         raise RuntimeError(
             f"Failed to generate image URL: {error}"
         )
