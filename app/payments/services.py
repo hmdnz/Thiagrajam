@@ -427,8 +427,8 @@ async def verify_and_settle_payment(
                         booking_id=booking.id,
                     )
 
-                if booking.status == booking_models.BookingStatusEnum.pending:
-                    booking.status = booking_models.BookingStatusEnum.confirmed
+                if booking.status == booking_models.BookingStatusEnum.PENDING:
+                    booking.status = booking_models.BookingStatusEnum.CONFIRMED
 
     elif mapped == "PENDING":
         payment.status = payment_models.PaymentStatusEnum.pending
