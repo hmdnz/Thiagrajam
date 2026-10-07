@@ -9,7 +9,8 @@ from datetime import date, datetime
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator, field_serializer
+from app.s3_service import generate_presigned_url
 
 from app.models import (
     BloodGroupEnum,
@@ -115,10 +116,20 @@ class DriverProfileUpdate(DriverProfileBase):
 class DriverPreferencesResponse(DriverProfileBase):
     id: UUID
     user_id: UUID
+    license_photo_url: Optional[str] = None
     license_verification_status: VerificationStatusEnum
     license_verification_notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer("license_photo_url")
+    def serialize_license_photo(self, value: Optional[str], _info) -> Optional[str]:
+        if value and not value.startswith("http"):
+            try:
+                return generate_presigned_url(value)
+            except Exception:
+                return value
+        return value
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -242,6 +253,15 @@ class UserOut(UserBase):
     token_type: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer("photo_url")
+    def serialize_photo_url(self, value: Optional[str], _info) -> Optional[str]:
+        if value and not value.startswith("http"):
+            try:
+                return generate_presigned_url(value)
+            except Exception:
+                return value
+        return value
 
     model_config = ConfigDict(from_attributes=True)
 
