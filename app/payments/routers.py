@@ -250,7 +250,6 @@ async def initialize_payment(
 # PAYMENT: VERIFY
 # POST /payments/verify
 # ============================================================
-
 @router.post(
     "/verify",
     response_model=payment_schemas.PaymentOut,
@@ -260,17 +259,94 @@ async def verify_payment(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
 ):
-    payment = await payment_services.verify_and_settle_payment(
-        db, transaction_ref=payload.transaction_ref
+    """
+    Verify a payment with the payment provider.
+
+    Security flow:
+    1. Find the payment using the transaction reference.
+    2. Make sure the payment exists.
+    3. Check that the current user owns the payment,
+       or that the current user is an administrator.
+    4. ONLY AFTER authorization succeeds, contact the provider
+       and perform payment verification/settlement.
+
+    We deliberately perform authorization before provider
+    verification so an unauthorized user cannot trigger
+    payment-side effects.
+    """
+
+    # ---------------------------------------------------------
+    # STEP 1: Find the payment in our database.
+    # ---------------------------------------------------------
+    payment = (
+        db.query(payment_models.Payment)
+        .filter(
+            payment_models.Payment.transaction_ref
+            == payload.transaction_ref
+        )
+        .first()
     )
 
-    if payment.user_id != current_user.id and not current_user.is_admin:
-        # Do not leak which refs belong to whom
-        raise HTTPException(403, "Not allowed.")
+    # If no payment exists with this transaction reference,
+    # there is nothing we can verify.
+    if not payment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payment not found.",
+        )
 
+    # ---------------------------------------------------------
+    # STEP 2: Authorize the requester BEFORE verification.
+    # ---------------------------------------------------------
+    #
+    # A normal customer can verify only their own payment.
+    #
+    # An administrator can verify any payment.
+    #
+    # IMPORTANT:
+    # We perform this check BEFORE calling:
+    #
+    #     verify_and_settle_payment()
+    #
+    # because that function communicates with the provider
+    # and can change payment/settlement state.
+    # ---------------------------------------------------------
+    if (
+        payment.user_id != current_user.id
+        and not current_user.is_admin
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not allowed.",
+        )
+
+    # ---------------------------------------------------------
+    # STEP 3: Now that authorization has passed, verify the
+    # payment with Squad/Paystack.
+    # ---------------------------------------------------------
+    #
+    # IMPORTANT:
+    # We are NOT changing the financial settlement logic here.
+    #
+    # The next step will improve verify_and_settle_payment()
+    # so that it validates:
+    #
+    #   - transaction reference
+    #   - amount
+    #   - currency
+    #   - provider status
+    #
+    # before marking the payment as successful.
+    # ---------------------------------------------------------
+    payment = await payment_services.verify_and_settle_payment(
+        db,
+        transaction_ref=payload.transaction_ref,
+    )
+
+    # ---------------------------------------------------------
+    # STEP 4: Return the verified payment.
+    # ---------------------------------------------------------
     return _payment_out(payment)
-
-
 # ============================================================
 # PAYMENT: WEBHOOKS
 # ============================================================
