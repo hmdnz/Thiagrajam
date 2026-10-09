@@ -41,9 +41,8 @@ def seed_bookings() -> None:
         passengers = (
             db.query(User)
             .filter(
-                User.email.like("demo.passenger.%@rideapp.ng"),
-                User.is_active.is_(True),
-                User.can_book_rides.is_(True),
+                 User.email.like("p-%@rideapp.ng"),
+                 User.is_driver.is_(False),
             )
             .order_by(User.email)
             .all()
