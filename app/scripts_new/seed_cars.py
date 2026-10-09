@@ -43,12 +43,17 @@ def seed_driver_cars() -> None:
     try:
         print(f"Connecting to database: {engine.url}")
 
+        # Find the demo drivers created by seed_users.py.
+# Current demo-driver emails use the format d-name@rideapp.ng.
         drivers = (
-            db.query(User)
-            .filter(User.email.like("demo.driver.%@rideapp.ng"), User.is_driver.is_(True))
-            .order_by(User.email)
-            .all()
+        db.query(User)
+        .filter(
+            User.email.like("d-%@rideapp.ng"),
+            User.is_driver.is_(True),
         )
+        .order_by(User.email)
+        .all()
+)
 
         if not drivers:
             print("No demo drivers found. Run seed_users.py first.")
