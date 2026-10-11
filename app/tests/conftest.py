@@ -1,3 +1,7 @@
+from datetime import datetime
+from sqlalchemy import event
+
+
 import uuid
 import pytest
 from fastapi.testclient import TestClient
@@ -12,10 +16,26 @@ from app import models, utils
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    SQLALCHEMY_DATABASE_URL,
+    connect_args={"check_same_thread": False},
 )
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
+@event.listens_for(engine, "connect")
+def _register_sqlite_now(dbapi_connection, connection_record):
+    """Support PostgreSQL-style now() defaults in SQLite tests."""
+    dbapi_connection.create_function(
+        "now",
+        0,
+        lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
+TestingSessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+)
 
 @pytest.fixture(scope="function")
 def db_session():

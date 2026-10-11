@@ -371,29 +371,58 @@ async def squad_webhook(request: Request, db: Session = Depends(get_db)):
     if event in ("charge_successful", "charge_failed") and transaction_ref:
         try:
             await payment_services.verify_and_settle_payment(
-                db, transaction_ref=transaction_ref
+                db,
+                transaction_ref=transaction_ref,
             )
         except Exception as exc:
-            logger.exception("Squad webhook settle failed: %s", exc)
+            logger.exception("Squad payment webhook failed: %s", exc)
 
     elif event in ("transfer_complete", "transfer_failed"):
         payout = (
             db.query(payment_models.Payout)
-            .filter(payment_models.Payout.payout_ref == transaction_ref)
+            .filter(
+                payment_models.Payout.payout_ref == transaction_ref
+            )
             .first()
         )
+
         if payout:
-            raw = (payload.get("Body") or {}).get(
-                "transaction_status", ""
-            )
-            mapped = payment_utils.map_provider_status(raw)
-            payout.status = {
-                "SUCCESS": payment_models.PayoutStatusEnum.success,
-                "PENDING": payment_models.PayoutStatusEnum.processing,
-                "FAILED": payment_models.PayoutStatusEnum.failed,
-            }[mapped]
-            payout.raw_status = raw
-            db.commit()
+            body = payload.get("Body") or {}
+            if not isinstance(body, dict):
+                body = {}
+
+            raw_status = str(
+                body.get("transaction_status") or event
+            ).lower()
+
+            target_status = {
+                "transfer_complete": payment_models.PayoutStatusEnum.success,
+                "transfer_failed": payment_models.PayoutStatusEnum.failed,
+            }[event]
+
+            failure_reason = None
+            if target_status == payment_models.PayoutStatusEnum.failed:
+                failure_reason = (
+                    body.get("message") or raw_status
+                )
+
+            try:
+                payment_services.finalize_payout_status(
+                    db,
+                    payout=payout,
+                    target_status=target_status,
+                    raw_status=raw_status,
+                    failure_reason=failure_reason,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Squad payout webhook finalization failed: %s",
+                    exc,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Payout webhook processing failed.",
+                )
 
     elif event == "refund_successful":
         refund = (
@@ -403,6 +432,7 @@ async def squad_webhook(request: Request, db: Session = Depends(get_db)):
             )
             .first()
         )
+
         if refund:
             refund.status = payment_models.RefundStatusEnum.processed
             db.commit()
@@ -412,7 +442,8 @@ async def squad_webhook(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/webhook/paystack")
 async def paystack_webhook(
-    request: Request, db: Session = Depends(get_db)
+    request: Request,
+    db: Session = Depends(get_db),
 ):
     raw_body = await request.body()
     signature = request.headers.get("x-paystack-signature", "")
@@ -433,26 +464,62 @@ async def paystack_webhook(
     if event in ("charge.success", "charge.failed") and reference:
         try:
             await payment_services.verify_and_settle_payment(
-                db, transaction_ref=reference
+                db,
+                transaction_ref=reference,
             )
         except Exception as exc:
-            logger.exception("Paystack webhook settle failed: %s", exc)
+            logger.exception("Paystack payment webhook failed: %s", exc)
 
-    elif event in ("transfer.success", "transfer.failed", "transfer.reversed"):
+    elif event in (
+        "transfer.success",
+        "transfer.failed",
+        "transfer.reversed",
+    ):
         payout = (
             db.query(payment_models.Payout)
-            .filter(payment_models.Payout.payout_ref == reference)
+            .filter(
+                payment_models.Payout.payout_ref == reference
+            )
             .first()
         )
+
         if payout:
             status_map = {
                 "transfer.success": payment_models.PayoutStatusEnum.success,
                 "transfer.failed": payment_models.PayoutStatusEnum.failed,
                 "transfer.reversed": payment_models.PayoutStatusEnum.reversed,
             }
-            payout.status = status_map[event]
-            payout.raw_status = event
-            db.commit()
+
+            provider_ref = data.get("transfer_code")
+            if provider_ref is None and data.get("id") is not None:
+                provider_ref = str(data["id"])
+
+            failure_reason = None
+            if event != "transfer.success":
+                failure_reason = (
+                    data.get("message")
+                    or data.get("reason")
+                    or event
+                )
+
+            try:
+                payment_services.finalize_payout_status(
+                    db,
+                    payout=payout,
+                    target_status=status_map[event],
+                    raw_status=event,
+                    provider_ref=provider_ref,
+                    failure_reason=failure_reason,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Paystack payout webhook finalization failed: %s",
+                    exc,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Payout webhook processing failed.",
+                )
 
     elif event in ("refund.processed", "refund.failed"):
         refund = (
@@ -463,6 +530,7 @@ async def paystack_webhook(
             )
             .first()
         )
+
         if refund:
             refund.status = (
                 payment_models.RefundStatusEnum.processed
@@ -753,6 +821,7 @@ def admin_list_payouts(
     return [_payout_out(p) for p in payouts]
 
 
+
 @router.post(
     "/admin/payouts/{payout_id}/review",
     response_model=payment_schemas.PayoutOut,
@@ -771,29 +840,38 @@ async def admin_review_payout(
         .filter(payment_models.Payout.id == payout_id)
         .first()
     )
+
     if not payout:
         raise HTTPException(404, "Payout not found.")
 
     if not payload.approve:
-        payout.status = payment_models.PayoutStatusEnum.failed
-        payout.admin_note = payload.admin_note
-        payout.processed_at = datetime.now(timezone.utc)
+        if payout.status != payment_models.PayoutStatusEnum.pending:
+            raise HTTPException(
+                status_code=400,
+                detail="Only a pending payout can be rejected by admin.",
+            )
 
-        # Return funds to driver
-        wallet = payment_services.get_or_create_wallet(db, payout.driver_id)
-        wallet.pending_balance_kobo -= payout.gross_amount_kobo
-        wallet.available_balance_kobo += payout.gross_amount_kobo
+        payout = payment_services.finalize_payout_status(
+            db,
+            payout=payout,
+            target_status=payment_models.PayoutStatusEnum.failed,
+            raw_status="admin_rejected",
+            failure_reason=(
+                payload.admin_note or "Payout rejected by admin."
+            ),
+            admin_user=current_user,
+            admin_note=payload.admin_note,
+        )
 
-        db.commit()
-        db.refresh(payout)
         return _payout_out(payout)
 
     payout = await payment_services.process_payout(
-        db, payout=payout, admin_user=current_user
+        db,
+        payout=payout,
+        admin_user=current_user,
     )
+
     return _payout_out(payout)
-
-
 # ============================================================
 # PAYMENT: GET ONE (LAST — path param swallows everything above)
 # GET /payments/{payment_id}
