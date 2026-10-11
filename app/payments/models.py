@@ -1,6 +1,7 @@
 """app/payments/models.py"""
+
 import enum
-from datetime import datetime, timezone
+
 from sqlalchemy import (
     Column,
     Integer,
@@ -9,8 +10,6 @@ from sqlalchemy import (
     ForeignKey,
     Enum,
     TIMESTAMP,
-    DateTime,
-    Numeric,
     Date,
     Text,
     Index,
@@ -37,18 +36,31 @@ class PaymentStatusEnum(enum.Enum):
   failed = "failed"
 
 
+class SettlementStatusEnum(enum.Enum):
+  held = "held"
+  eligible_for_settlement = "eligible_for_settlement"
+  settled = "settled"
+
+
 class PaymentPurposeEnum(enum.Enum):
   booking = "booking"
   wallet_topup = "wallet_topup"
 
 
 class TransactionTypeEnum(enum.Enum):
-  payment = "payment"
-  refund = "refund"
-  payout = "payout"
-  commission = "commission"
-  tax = "tax"
-  adjustment = "adjustment"
+    payment = "payment"
+    refund = "refund"
+    payout = "payout"
+    commission = "commission"
+    tax = "tax"
+    adjustment = "adjustment"
+    balance_transfer = "balance_transfer"
+
+
+class BalanceBucketEnum(enum.Enum):
+    available = "available"
+    pending_earnings = "pending_earnings"
+    pending_payout = "pending_payout"
 
 
 class RefundStatusEnum(enum.Enum):
@@ -88,9 +100,11 @@ class Payment(Base):
       index=True,
   )
 
-  # Fixed: Match Integer type of bookings.id
+  # Match Integer type of bookings.id
   booking_id = Column(
-      Integer, ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+      Integer,
+      ForeignKey("bookings.id", ondelete="CASCADE"),
+      nullable=False,
   )
 
   purpose = Column(
@@ -99,15 +113,42 @@ class Payment(Base):
       nullable=False,
   )
 
-  provider = Column(Enum(PaymentProviderEnum), nullable=False)
+  provider = Column(
+      Enum(PaymentProviderEnum),
+      nullable=False,
+  )
 
-  transaction_ref = Column(String, unique=True, nullable=False, index=True)
-  provider_ref = Column(String, nullable=True)
+  transaction_ref = Column(
+      String,
+      unique=True,
+      nullable=False,
+      index=True,
+  )
 
-  amount_kobo = Column(Integer, nullable=False)
-  merchant_amount_kobo = Column(Integer, nullable=True)
+  provider_ref = Column(
+      String,
+      nullable=True,
+  )
 
-  currency = Column(String, default="NGN", nullable=False)
+  amount_kobo = Column(
+      Integer,
+      nullable=False,
+  )
+
+  merchant_amount_kobo = Column(
+      Integer,
+      nullable=True,
+  )
+
+  currency = Column(
+      String,
+      default="NGN",
+      nullable=False,
+  )
+
+  # ----------------------------------------------------------
+  # Payment status
+  # ----------------------------------------------------------
 
   status = Column(
       Enum(PaymentStatusEnum),
@@ -116,18 +157,71 @@ class Payment(Base):
       index=True,
   )
 
-  raw_status = Column(String, nullable=True)
-  auth_url = Column(String, nullable=True)
-  failure_reason = Column(Text, nullable=True)
-  provider_response = Column(Text, nullable=True)
+  # ----------------------------------------------------------
+  # Settlement lifecycle
+  #
+  # SUCCESS payment does not automatically mean SETTLED.
+  #
+  # HELD
+  #   ↓
+  # ELIGIBLE_FOR_SETTLEMENT
+  #   ↓
+  # SETTLED
+  # ----------------------------------------------------------
 
-  paid_at = Column(TIMESTAMP(timezone=True), nullable=True)
+  settlement_status = Column(
+      Enum(SettlementStatusEnum),
+      default=SettlementStatusEnum.held,
+      nullable=False,
+      index=True,
+  )
+
+  settlement_amount_kobo = Column(
+      Integer,
+      nullable=True,
+  )
+
+  settlement_eligible_at = Column(
+      TIMESTAMP(timezone=True),
+      nullable=True,
+  )
+
+  settled_at = Column(
+      TIMESTAMP(timezone=True),
+      nullable=True,
+  )
+
+  raw_status = Column(
+      String,
+      nullable=True,
+  )
+
+  auth_url = Column(
+      String,
+      nullable=True,
+  )
+
+  failure_reason = Column(
+      Text,
+      nullable=True,
+  )
+
+  provider_response = Column(
+      Text,
+      nullable=True,
+  )
+
+  paid_at = Column(
+      TIMESTAMP(timezone=True),
+      nullable=True,
+  )
 
   created_at = Column(
       TIMESTAMP(timezone=True),
       nullable=False,
       server_default=text("now()"),
   )
+
   updated_at = Column(
       TIMESTAMP(timezone=True),
       nullable=False,
@@ -135,20 +229,39 @@ class Payment(Base):
       onupdate=text("now()"),
   )
 
+  # ----------------------------------------------------------
   # Relationships
-  user = relationship("app.models.User", back_populates="payments")
+  # ----------------------------------------------------------
+
+  user = relationship(
+      "app.models.User",
+      back_populates="payments",
+  )
+
   booking = relationship(
-      "app.bookings.models.Booking", back_populates="payments"
+      "app.bookings.models.Booking",
+      back_populates="payments",
   )
 
   transactions = relationship(
-      "Transaction", back_populates="payment", cascade="all, delete-orphan"
-  )
-  refunds = relationship(
-      "Refund", back_populates="payment", cascade="all, delete-orphan"
+      "Transaction",
+      back_populates="payment",
+      cascade="all, delete-orphan",
   )
 
-  __table_args__ = (Index("ix_payments_user_status", "user_id", "status"),)
+  refunds = relationship(
+      "Refund",
+      back_populates="payment",
+      cascade="all, delete-orphan",
+  )
+
+  __table_args__ = (
+      Index(
+          "ix_payments_user_status",
+          "user_id",
+          "status",
+      ),
+  )
 
 
 # ============================================================
@@ -158,7 +271,11 @@ class Payment(Base):
 class Transaction(Base):
   __tablename__ = "transactions"
 
-  id = Column(Integer, primary_key=True, index=True)
+  id = Column(
+      Integer,
+      primary_key=True,
+      index=True,
+  )
 
   user_id = Column(
       UUID(as_uuid=True),
@@ -173,29 +290,78 @@ class Transaction(Base):
       nullable=True,
       index=True,
   )
+
   booking_id = Column(
       Integer,
       ForeignKey("bookings.id", ondelete="SET NULL"),
       nullable=True,
       index=True,
   )
+
   payout_id = Column(
-      Integer, ForeignKey("payouts.id", ondelete="SET NULL"), nullable=True
+      Integer,
+      ForeignKey("payouts.id", ondelete="SET NULL"),
+      nullable=True,
   )
+
   refund_id = Column(
-      Integer, ForeignKey("refunds.id", ondelete="SET NULL"), nullable=True
+      Integer,
+      ForeignKey("refunds.id", ondelete="SET NULL"),
+      nullable=True,
   )
 
-  transaction_type = Column(Enum(TransactionTypeEnum), nullable=False)
+  transaction_type = Column(
+      Enum(TransactionTypeEnum),
+      nullable=False,
+  )
 
-  direction = Column(String, nullable=False)  # "credit" or "debit"
+  # ----------------------------------------------------------
+  # Balance bucket
+  #
+  # available:
+  #   Money currently available to withdraw.
+  #
+  # pending_earnings:
+  #   Earnings recorded but waiting for settlement.
+  # ----------------------------------------------------------
 
-  amount_kobo = Column(Integer, nullable=False)
-  currency = Column(String, default="NGN", nullable=False)
-  description = Column(String, nullable=True)
-  provider_ref = Column(String, nullable=True)
+  balance_bucket = Column(
+      Enum(BalanceBucketEnum),
+      default=BalanceBucketEnum.available,
+      nullable=False,
+      index=True,
+  )
 
-  transaction_date = Column(Date, nullable=False)
+  direction = Column(
+      String,
+      nullable=False,
+  )  # "credit" or "debit"
+
+  amount_kobo = Column(
+      Integer,
+      nullable=False,
+  )
+
+  currency = Column(
+      String,
+      default="NGN",
+      nullable=False,
+  )
+
+  description = Column(
+      String,
+      nullable=True,
+  )
+
+  provider_ref = Column(
+      String,
+      nullable=True,
+  )
+
+  transaction_date = Column(
+      Date,
+      nullable=False,
+  )
 
   created_at = Column(
       TIMESTAMP(timezone=True),
@@ -203,11 +369,26 @@ class Transaction(Base):
       server_default=text("now()"),
   )
 
-  payment = relationship("Payment", back_populates="transactions")
-  user = relationship("app.models.User", backref="transactions")
+  # ----------------------------------------------------------
+  # Relationships
+  # ----------------------------------------------------------
+
+  payment = relationship(
+      "Payment",
+      back_populates="transactions",
+  )
+
+  user = relationship(
+      "app.models.User",
+      backref="transactions",
+  )
 
   __table_args__ = (
-      Index("ix_transactions_user_date", "user_id", "transaction_date"),
+      Index(
+          "ix_transactions_user_date",
+          "user_id",
+          "transaction_date",
+      ),
   )
 
 
@@ -218,7 +399,11 @@ class Transaction(Base):
 class Refund(Base):
   __tablename__ = "refunds"
 
-  id = Column(Integer, primary_key=True, index=True)
+  id = Column(
+      Integer,
+      primary_key=True,
+      index=True,
+  )
 
   payment_id = Column(
       Integer,
@@ -226,27 +411,58 @@ class Refund(Base):
       nullable=False,
       index=True,
   )
+
   booking_id = Column(
-      Integer, ForeignKey("bookings.id", ondelete="SET NULL"), nullable=True
+      Integer,
+      ForeignKey("bookings.id", ondelete="SET NULL"),
+      nullable=True,
   )
+
   requested_by_id = Column(
       UUID(as_uuid=True),
       ForeignKey("users.id", ondelete="SET NULL"),
       nullable=True,
   )
+
   reviewed_by_id = Column(
       UUID(as_uuid=True),
       ForeignKey("users.id", ondelete="SET NULL"),
       nullable=True,
   )
 
-  refund_ref = Column(String, unique=True, nullable=False, index=True)
-  provider_refund_ref = Column(String, nullable=True)
+  refund_ref = Column(
+      String,
+      unique=True,
+      nullable=False,
+      index=True,
+  )
 
-  is_partial = Column(Boolean, default=False, nullable=False)
-  amount_kobo = Column(Integer, nullable=False)
-  currency = Column(String, default="NGN", nullable=False)
-  reason = Column(Text, nullable=False)
+  provider_refund_ref = Column(
+      String,
+      nullable=True,
+  )
+
+  is_partial = Column(
+      Boolean,
+      default=False,
+      nullable=False,
+  )
+
+  amount_kobo = Column(
+      Integer,
+      nullable=False,
+  )
+
+  currency = Column(
+      String,
+      default="NGN",
+      nullable=False,
+  )
+
+  reason = Column(
+      Text,
+      nullable=False,
+  )
 
   status = Column(
       Enum(RefundStatusEnum),
@@ -255,15 +471,27 @@ class Refund(Base):
       index=True,
   )
 
-  raw_status = Column(String, nullable=True)
-  admin_note = Column(Text, nullable=True)
-  processed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+  raw_status = Column(
+      String,
+      nullable=True,
+  )
+
+  admin_note = Column(
+      Text,
+      nullable=True,
+  )
+
+  processed_at = Column(
+      TIMESTAMP(timezone=True),
+      nullable=True,
+  )
 
   created_at = Column(
       TIMESTAMP(timezone=True),
       nullable=False,
       server_default=text("now()"),
   )
+
   updated_at = Column(
       TIMESTAMP(timezone=True),
       nullable=False,
@@ -271,15 +499,30 @@ class Refund(Base):
       onupdate=text("now()"),
   )
 
-  payment = relationship("Payment", back_populates="refunds")
-  booking = relationship("app.bookings.models.Booking", backref="refunds")
+  # ----------------------------------------------------------
+  # Relationships
+  # ----------------------------------------------------------
+
+  payment = relationship(
+      "Payment",
+      back_populates="refunds",
+  )
+
+  booking = relationship(
+      "app.bookings.models.Booking",
+      backref="refunds",
+  )
+
   requested_by = relationship(
       "app.models.User",
       foreign_keys=[requested_by_id],
       backref="refunds_requested",
   )
+
   reviewed_by = relationship(
-      "app.models.User", foreign_keys=[reviewed_by_id], backref="refunds_reviewed"
+      "app.models.User",
+      foreign_keys=[reviewed_by_id],
+      backref="refunds_reviewed",
   )
 
 
@@ -290,28 +533,85 @@ class Refund(Base):
 class Payout(Base):
   __tablename__ = "payouts"
 
-  id = Column(Integer, primary_key=True, index=True)
+  id = Column(
+      Integer,
+      primary_key=True,
+      index=True,
+  )
+
   driver_id = Column(
       UUID(as_uuid=True),
       ForeignKey("users.id", ondelete="CASCADE"),
       nullable=False,
   )
-  payout_ref = Column(String, unique=True, nullable=False, index=True)
-  provider_ref = Column(String, nullable=True)
-  provider = Column(Enum(PaymentProviderEnum), nullable=False)
 
-  gross_amount_kobo = Column(Integer, nullable=False)
-  commission_kobo = Column(Integer, nullable=False)
-  tax_kobo = Column(Integer, nullable=False)
-  net_amount_kobo = Column(Integer, nullable=False)
+  payout_ref = Column(
+      String,
+      unique=True,
+      nullable=False,
+      index=True,
+  )
 
-  currency = Column(String, default="NGN", nullable=False)
+  provider_ref = Column(
+      String,
+      nullable=True,
+  )
 
-  bank_code = Column(String, nullable=False)
-  bank_name = Column(String, nullable=True)
-  account_number = Column(String, nullable=False)
-  account_name = Column(String, nullable=False)
-  recipient_code = Column(String, nullable=True)
+  provider = Column(
+      Enum(PaymentProviderEnum),
+      nullable=False,
+  )
+
+  gross_amount_kobo = Column(
+      Integer,
+      nullable=False,
+  )
+
+  commission_kobo = Column(
+      Integer,
+      nullable=False,
+  )
+
+  tax_kobo = Column(
+      Integer,
+      nullable=False,
+  )
+
+  net_amount_kobo = Column(
+      Integer,
+      nullable=False,
+  )
+
+  currency = Column(
+      String,
+      default="NGN",
+      nullable=False,
+  )
+
+  bank_code = Column(
+      String,
+      nullable=False,
+  )
+
+  bank_name = Column(
+      String,
+      nullable=True,
+  )
+
+  account_number = Column(
+      String,
+      nullable=False,
+  )
+
+  account_name = Column(
+      String,
+      nullable=False,
+  )
+
+  recipient_code = Column(
+      String,
+      nullable=True,
+  )
 
   status = Column(
       Enum(PayoutStatusEnum),
@@ -320,16 +620,32 @@ class Payout(Base):
       index=True,
   )
 
-  raw_status = Column(String, nullable=True)
-  failure_reason = Column(Text, nullable=True)
-  admin_note = Column(Text, nullable=True)
-  processed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+  raw_status = Column(
+      String,
+      nullable=True,
+  )
+
+  failure_reason = Column(
+      Text,
+      nullable=True,
+  )
+
+  admin_note = Column(
+      Text,
+      nullable=True,
+  )
+
+  processed_at = Column(
+      TIMESTAMP(timezone=True),
+      nullable=True,
+  )
 
   created_at = Column(
       TIMESTAMP(timezone=True),
       nullable=False,
       server_default=text("now()"),
   )
+
   updated_at = Column(
       TIMESTAMP(timezone=True),
       nullable=False,
@@ -337,7 +653,10 @@ class Payout(Base):
       onupdate=text("now()"),
   )
 
-  driver = relationship("app.models.User", backref="payouts")
+  driver = relationship(
+      "app.models.User",
+      backref="payouts",
+  )
 
 
 # ============================================================
@@ -347,23 +666,68 @@ class Payout(Base):
 class Statement(Base):
   __tablename__ = "statements"
 
-  id = Column(Integer, primary_key=True, index=True)
-
-  user_id = Column(
-      UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+  id = Column(
+      Integer,
+      primary_key=True,
+      index=True,
   )
 
-  period_start = Column(Date, nullable=False)
-  period_end = Column(Date, nullable=False)
+  user_id = Column(
+      UUID(as_uuid=True),
+      ForeignKey("users.id", ondelete="CASCADE"),
+  )
 
-  opening_balance_kobo = Column(Integer, nullable=False, default=0)
-  closing_balance_kobo = Column(Integer, nullable=False, default=0)
-  total_credits_kobo = Column(Integer, nullable=False, default=0)
-  total_debits_kobo = Column(Integer, nullable=False, default=0)
-  total_commission_kobo = Column(Integer, nullable=False, default=0)
-  total_tax_kobo = Column(Integer, nullable=False, default=0)
+  period_start = Column(
+      Date,
+      nullable=False,
+  )
 
-  currency = Column(String, default="NGN", nullable=False)
+  period_end = Column(
+      Date,
+      nullable=False,
+  )
+
+  opening_balance_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  closing_balance_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  total_credits_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  total_debits_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  total_commission_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  total_tax_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  currency = Column(
+      String,
+      default="NGN",
+      nullable=False,
+  )
 
   status = Column(
       Enum(StatementStatusEnum),
@@ -377,7 +741,10 @@ class Statement(Base):
       server_default=text("now()"),
   )
 
-  user = relationship("app.models.User", backref="statements")
+  user = relationship(
+      "app.models.User",
+      backref="statements",
+  )
 
   __table_args__ = (
       Index(
@@ -396,21 +763,84 @@ class Statement(Base):
 class Wallet(Base):
   __tablename__ = "wallets"
 
-  id = Column(Integer, primary_key=True, index=True)
-
-  user_id = Column(
-      UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+  id = Column(
+      Integer,
+      primary_key=True,
+      index=True,
   )
 
-  available_balance_kobo = Column(Integer, nullable=False, default=0)
-  pending_balance_kobo = Column(Integer, nullable=False, default=0)
+  user_id = Column(
+      UUID(as_uuid=True),
+      ForeignKey("users.id", ondelete="CASCADE"),
+  )
 
-  lifetime_credits_kobo = Column(Integer, nullable=False, default=0)
-  lifetime_debits_kobo = Column(Integer, nullable=False, default=0)
-  lifetime_commission_kobo = Column(Integer, nullable=False, default=0)
-  lifetime_tax_kobo = Column(Integer, nullable=False, default=0)
+  # ----------------------------------------------------------
+  # Available balance
+  #
+  # Money currently available for payout.
+  # ----------------------------------------------------------
 
-  currency = Column(String, default="NGN", nullable=False)
+  available_balance_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  # ----------------------------------------------------------
+  # Pending earnings
+  #
+  # Earnings that have been recorded but are still held
+  # and have not yet been settled into available balance.
+  # ----------------------------------------------------------
+
+  pending_earnings_balance_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  # ----------------------------------------------------------
+  # Pending payout
+  #
+  # Money that was available and has already been requested
+  # for payout.
+  # ----------------------------------------------------------
+
+  pending_balance_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  lifetime_credits_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  lifetime_debits_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  lifetime_commission_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  lifetime_tax_kobo = Column(
+      Integer,
+      nullable=False,
+      default=0,
+  )
+
+  currency = Column(
+      String,
+      default="NGN",
+      nullable=False,
+  )
 
   updated_at = Column(
       TIMESTAMP(timezone=True),
@@ -419,5 +849,9 @@ class Wallet(Base):
       onupdate=text("now()"),
   )
 
-  user = relationship("app.models.User", backref="wallet", uselist=False)
- 
+  user = relationship(
+      "app.models.User",
+      backref="wallet",
+      uselist=False,
+  )
+
