@@ -11,7 +11,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import models, oauth2
@@ -20,6 +20,7 @@ from app.cars import models as car_models
 from app.database import get_db
 from app.rides import models as ride_models
 from app.rides import schemas as ride_schemas
+
 
 router = APIRouter(
     prefix="/rides",
@@ -297,14 +298,42 @@ def search_rides(
         )
     )
 
+    # ------------------------------------------------------------
+# FROM / TO LOCATION SEARCH
+# ------------------------------------------------------------
+# "from" searches both the origin city and the specific
+# pickup location.
+#
+# "to" searches both the destination city and the specific
+# drop-off location.
+#
+# This allows searches such as:
+#   from=Lagos
+#   to=Abuja
+#
+# while still allowing:
+#   from=Ikeja
+#   to=Wuse
+# ------------------------------------------------------------
+
     if from_location:
-        query = query.filter(
-            ride_models.Ride.pickup_location.ilike(f"%{from_location}%")
+        from_value = from_location.strip()
+        if from_value:
+            query = query.filter(
+            or_(
+                ride_models.Ride.origin_city.ilike(f"%{from_value}%"),
+                ride_models.Ride.pickup_location.ilike(f"%{from_value}%"),
+            )
         )
 
     if to_location:
+        to_value = to_location.strip()
+    if to_value:
         query = query.filter(
-            ride_models.Ride.dropoff_location.ilike(f"%{to_location}%")
+            or_(
+                ride_models.Ride.destination_city.ilike(f"%{to_value}%"),
+                ride_models.Ride.dropoff_location.ilike(f"%{to_value}%"),
+            )
         )
 
     if departure_date:
