@@ -328,8 +328,8 @@ def search_rides(
 
     if to_location:
         to_value = to_location.strip()
-    if to_value:
-        query = query.filter(
+        if to_value:
+            query = query.filter(
             or_(
                 ride_models.Ride.destination_city.ilike(f"%{to_value}%"),
                 ride_models.Ride.dropoff_location.ilike(f"%{to_value}%"),
