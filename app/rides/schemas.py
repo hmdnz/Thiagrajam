@@ -2,6 +2,8 @@
 app/rides/schemas.py
 """
 
+from app.cars.schemas import CarPhotoOut
+
 import time as time_lib
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -108,6 +110,7 @@ class CarSummaryOut(BaseModel):
     smoking_allowed: bool
     pets_allowed: bool
     wheelchair_accessible: bool
+    photos: List[CarPhotoOut] = []
 
     model_config = ConfigDict(from_attributes=True)
 
