@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app import models, oauth2
 from app.bookings import models as booking_models
@@ -112,7 +112,9 @@ def _create_single_ride(
         # Address mapping
         if hasattr(ride_models.Stopover, "address"):
             stopover_kwargs["address"] = getattr(
-                stopover_data, "address", getattr(stopover_data, "location", None)
+                stopover_data,
+                "address",
+                getattr(stopover_data, "location", None),
             )
 
         # Order mapping
@@ -279,6 +281,10 @@ def search_rides(
             ride_models.Ride,
             ride_models.RideOccurrence.date,
         )
+        .options(
+            selectinload(ride_models.Ride.car)
+            .selectinload(car_models.Car.photos)
+        )
         .join(
             ride_models.RideOccurrence,
             ride_models.RideOccurrence.ride_id == ride_models.Ride.id,
@@ -299,42 +305,42 @@ def search_rides(
     )
 
     # ------------------------------------------------------------
-# FROM / TO LOCATION SEARCH
-# ------------------------------------------------------------
-# "from" searches both the origin city and the specific
-# pickup location.
-#
-# "to" searches both the destination city and the specific
-# drop-off location.
-#
-# This allows searches such as:
-#   from=Lagos
-#   to=Abuja
-#
-# while still allowing:
-#   from=Ikeja
-#   to=Wuse
-# ------------------------------------------------------------
+    # FROM / TO LOCATION SEARCH
+    # ------------------------------------------------------------
+    # "from" searches both the origin city and the specific
+    # pickup location.
+    #
+    # "to" searches both the destination city and the specific
+    # drop-off location.
+    #
+    # This allows searches such as:
+    #   from=Lagos
+    #   to=Abuja
+    #
+    # while still allowing:
+    #   from=Ikeja
+    #   to=Wuse
+    # ------------------------------------------------------------
 
     if from_location:
         from_value = from_location.strip()
         if from_value:
             query = query.filter(
-            or_(
-                ride_models.Ride.origin_city.ilike(f"%{from_value}%"),
-                ride_models.Ride.pickup_location.ilike(f"%{from_value}%"),
+                or_(
+                    ride_models.Ride.origin_city.ilike(f"%{from_value}%"),
+                    ride_models.Ride.pickup_location.ilike(f"%{from_value}%"),
+                )
             )
-        )
 
     if to_location:
         to_value = to_location.strip()
         if to_value:
             query = query.filter(
-            or_(
-                ride_models.Ride.destination_city.ilike(f"%{to_value}%"),
-                ride_models.Ride.dropoff_location.ilike(f"%{to_value}%"),
+                or_(
+                    ride_models.Ride.destination_city.ilike(f"%{to_value}%"),
+                    ride_models.Ride.dropoff_location.ilike(f"%{to_value}%"),
+                )
             )
-        )
 
     if departure_date:
         query = query.filter(ride_models.RideOccurrence.date == departure_date)
@@ -366,10 +372,14 @@ def search_rides(
         )
 
     if has_power_outlets is not None:
-        query = query.filter(car_models.Car.has_power_outlets == has_power_outlets)
+        query = query.filter(
+            car_models.Car.has_power_outlets == has_power_outlets
+        )
 
     if smoking_allowed is not None:
-        query = query.filter(car_models.Car.smoking_allowed == smoking_allowed)
+        query = query.filter(
+            car_models.Car.smoking_allowed == smoking_allowed
+        )
 
     if pets_allowed is not None:
         query = query.filter(car_models.Car.pets_allowed == pets_allowed)
@@ -392,7 +402,8 @@ def search_rides(
         )
 
     print(
-        f"[PERFORMANCE] Query construction: {time_lib.perf_counter() - query_start:.4f}s"
+        f"[PERFORMANCE] Query construction: "
+        f"{time_lib.perf_counter() - query_start:.4f}s"
     )
 
     exec_start = time_lib.perf_counter()
@@ -405,10 +416,12 @@ def search_rides(
     total_pages = (total + limit - 1) // limit if total > 0 else 0
 
     print(
-        f"[PERFORMANCE] Query execution: {time_lib.perf_counter() - exec_start:.4f}s"
+        f"[PERFORMANCE] Query execution: "
+        f"{time_lib.perf_counter() - exec_start:.4f}s"
     )
     print(
-        f"[PERFORMANCE] TOTAL /rides/search: {time_lib.perf_counter() - total_start:.4f}s"
+        f"[PERFORMANCE] TOTAL /rides/search: "
+        f"{time_lib.perf_counter() - total_start:.4f}s"
     )
     print(
         f"[PERFORMANCE] Results returned: {len(results)} of {total} total matches"
@@ -417,7 +430,8 @@ def search_rides(
     items = []
     for ride, occ_date in results:
         occurrence_record = next(
-            (occ for occ in ride.occurrences if occ.date == occ_date), None
+            (occ for occ in ride.occurrences if occ.date == occ_date),
+            None,
         )
         seats_remaining = (
             occurrence_record.seats_remaining
@@ -430,14 +444,20 @@ def search_rides(
                 "id": getattr(s, "id", None),
                 "ride_id": getattr(s, "ride_id", None),
                 "city_name": getattr(
-                    s, "city_name", getattr(s, "location_name", None)
+                    s,
+                    "city_name",
+                    getattr(s, "location_name", None),
                 ),
                 "location_name": getattr(
-                    s, "location_name", getattr(s, "city_name", None)
+                    s,
+                    "location_name",
+                    getattr(s, "city_name", None),
                 ),
                 "address": getattr(s, "address", None),
                 "order": getattr(
-                    s, "order_index", getattr(s, "order", 0)
+                    s,
+                    "order_index",
+                    getattr(s, "order", 0),
                 ),
                 "price_from_origin": float(
                     getattr(s, "price_from_origin", 0.0) or 0.0
@@ -461,7 +481,9 @@ def search_rides(
             "price_per_seat": getattr(ride, "price_per_seat", 0.0),
             "max_passengers": getattr(ride, "max_passengers", 4),
             "max_back_seat_passengers": getattr(
-                ride, "max_back_seat_passengers", None
+                ride,
+                "max_back_seat_passengers",
+                None,
             ),
             "is_active": getattr(ride, "is_active", True),
             "created_at": getattr(ride, "created_at", datetime.now()),
@@ -472,7 +494,9 @@ def search_rides(
             "seats_remaining_for_date": seats_remaining,
         }
 
-        items.append(ride_schemas.RideSearchResult.model_validate(ride_data))
+        items.append(
+            ride_schemas.RideSearchResult.model_validate(ride_data)
+        )
 
     return {
         "items": items,
